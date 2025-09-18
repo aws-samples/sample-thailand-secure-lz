@@ -1,0 +1,336 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template to create EventBridge rule for GuardDuty CRITICAL/HIGH severity findings - Deploy in Audit/Security Account'
+
+Parameters:
+  EmailAddresses:
+    Type: String
+    Description: 'Comma-delimited list of email addresses to subscribe to the SNS topic'
+  EncryptionKeyAdministratorArn:
+    Type: String
+    Description: "ARN of IAM user/role that will administer the KMS keys."
+
+Resources:
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: []
+      Policies:
+        - PolicyName: EventBridgeSNSPublish
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref SNSTopic
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: slz-guardduty-severity-alerts
+      KmsMasterKeyId: !GetAtt SNSTopicEncryptionKey.Arn
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  SNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref SNSTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref SNSTopic
+
+  SNSTopicEncryptionKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: "SNS Topic Key"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "key-default-1"
+        Statement:
+          - Sid: "Allow Key Administration"
+            Effect: "Allow"
+            Principal:
+              AWS: !Ref EncryptionKeyAdministratorArn
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+              - "kms:GenerateDataKey"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+            Resource: "*"
+          - Sid: "Allow SNS Service"
+            Effect: "Allow"
+            Principal:
+              Service: !Sub sns.${AWS::Region}.amazonaws.com
+            Action:
+              - "kms:Decrypt*"
+              - "kms:Encrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:ReEncrypt*"
+              - "kms:Describe*"
+            Resource: "*"
+            Condition:
+              ArnEquals:
+                "kms:EncryptionContext:aws:sns:arn": !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:*
+          - Sid: "Enable IAM User Permissions"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - "kms:*"
+            Resource: "*"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  SNSTopicEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/slz-sns-topic-key
+      TargetKeyId: !Ref SNSTopicEncryptionKey
+
+  EventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: guardduty-severity-alerts
+      Description: 'EventBridge rule to monitor GuardDuty findings with CRITICAL/HIGH severity'
+      State: ENABLED
+      EventPattern: 
+        source: 
+          - aws.securityhub
+        detail-type: 
+          - Security Hub Findings - Imported
+        detail:
+          findings:
+            ProductArn:
+              - arn:aws:securityhub:ap-southeast-1::product/aws/guardduty
+              - arn:aws:securityhub:ap-southeast-1::product/aws/securityhub
+              - arn:aws:securityhub:ap-southeast-7::product/aws/guardduty
+              - arn:aws:securityhub:ap-southeast-7::product/aws/securityhub
+            Severity:
+              Label:
+                - CRITICAL
+                - HIGH
+            Workflow: 
+              Status:
+                - NEW
+            RecordState: 
+                - ACTIVE
+      Targets:
+        - Arn: !Ref SNSTopic
+          Id: GuardDutySeverityAlerts
+          RoleArn: !GetAtt EventBridgeRole.Arn
+          InputTransformer:
+            InputPathsMap:
+              severity: "$.detail.findings[0].Severity.Label"
+              title: "$.detail.findings[0].Title"
+              description: "$.detail.findings[0].Description"
+              account: "$.detail.findings[0].AwsAccountId"
+              region: "$.detail.findings[0].Region"
+              resourceType: "$.detail.findings[0].Resources[0].Type"
+              resourceId: "$.detail.findings[0].Resources[0].Id"
+              createdAt: "$.detail.findings[0].CreatedAt"
+              recommendation: "$.detail.findings[0].Remediation.Recommendation.Text"
+              remediationUrl: "$.detail.findings[0].Remediation.Recommendation.Url"
+              productname: "$.detail.findings[0].ProductFields.aws/securityhub/ProductName"
+            InputTemplate: >-
+              {"Subject": "[<severity>] <productname> Security Finding: <title>", "Message": "<productname> Finding\n\n--- FINDING DETAILS ---\nSeverity: <severity>\nDescription: <description>\n\n--- AFFECTED RESOURCE ---\nAccount: <account>\nRegion: <region>\nResource Type: <resourceType>\nResource ID: <resourceId>\nDetection Time: <createdAt>\n\n--- REMEDIATION ---\nAction Required: <recommendation>\n\nRemediation Steps: <remediationUrl>\n\n--- \nAWS <productname> Alert System"}
+
+  SNSSubscriptionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt SNSSubscriptionFunctionRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import os
+          import logging
+
+          # Set up logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              logger.info(f"Processing event: {event}")
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      sns = boto3.client('sns')
+                      topic_arn = event['ResourceProperties']['TopicArn']
+                      emails = event['ResourceProperties']['Emails'].split(',')
+                      
+                      # Clean and validate emails
+                      emails = [email.strip() for email in emails if email.strip()]
+                      logger.info(f"Processing {len(emails)} email subscriptions")
+                      
+                      # Subscribe each email
+                      for email in emails:
+                          logger.info(f"Subscribing email: {email}")
+                          sns.subscribe(
+                              TopicArn=topic_arn,
+                              Protocol='email',
+                              Endpoint=email
+                          )
+                      
+                      logger.info("Successfully processed all subscriptions")
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                          'Message': f'Successfully subscribed {len(emails)} email(s)'
+                      })
+                  elif event['RequestType'] == 'Delete':
+                      logger.info("Processing delete request")
+                      # Subscriptions are automatically deleted with the topic
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                          'Message': 'Subscriptions will be deleted with topic'
+                      })
+              except Exception as e:
+                  logger.error(f"Error processing request: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {
+                      'Error': str(e)
+                  })
+      Runtime: python3.13
+      Timeout: 60
+      MemorySize: 128
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  CloudWatchEncryptionKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: "CloudWatch LogGroup Key"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "key-default-1"
+        Statement:
+          - Sid: "Allow Key Administration"
+            Effect: "Allow"
+            Principal:
+              AWS: !Ref EncryptionKeyAdministratorArn
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+              - "kms:GenerateDataKey"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+            Resource: "*"
+          - Sid: "Allow CloudWatch Logs Service"
+            Effect: "Allow"
+            Principal:
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action:
+              - "kms:Decrypt*"
+              - "kms:Encrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:ReEncrypt*"
+              - "kms:Describe*"
+            Resource: "*"
+            Condition:
+              ArnEquals:
+                "kms:EncryptionContext:aws:logs:arn": !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+          - Sid: "Enable IAM User Permissions"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - "kms:*"
+            Resource: "*"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  CloudWatchEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/slz-cloudwatch-key
+      TargetKeyId: !Ref CloudWatchEncryptionKey
+
+  SNSSubscriptionFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SNSSubscriptionManagement
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Subscribe
+                Resource: !Ref SNSTopic
+      
+  SNSSubscriptionFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${SNSSubscriptionFunction}'
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt CloudWatchEncryptionKey.Arn
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  SNSSubscriptions:
+    Type: Custom::SNSSubscriptions
+    Properties:
+      ServiceToken: !GetAtt SNSSubscriptionFunction.Arn
+      TopicArn: !Ref SNSTopic
+      Emails: !Ref EmailAddresses
+
+Outputs:
+  SNSTopicArn:
+    Description: ARN of the SNS Topic for GuardDuty alerts
+    Value: !Ref SNSTopic
+  EventBridgeRuleArn:
+    Description: ARN of the EventBridge Rule
+    Value: !GetAtt EventBridgeRule.Arn
+  SubscribedEmails:
+    Description: Email addresses subscribed to the SNS topic
+    Value: !Ref EmailAddresses
