@@ -1,0 +1,81 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates IAM Access Analyzer with Organization zone of trust. IAM Access Analyzer service role 'AWSServiceRoleForAccessAnalyzer' must be created in the organization management account before running this CloudFormation",
+    "Parameters": {
+        "AnalyzerName": {
+            "Type": "String",
+            "Default": "OrganizationAccessAnalyzer",
+            "Description": "Name of the IAM Access Analyzer"
+        },
+        "AnalyzerType": {
+            "Type": "String",
+            "Default": "ORGANIZATION",
+            "AllowedValues": [
+                "ORGANIZATION",
+                "ORGANIZATION_UNUSED_ACCESS",
+                "ACCOUNT",
+                "ACCOUNT_UNUSED_ACCESS"
+            ],
+            "Description": "Type of Access Analyzer (Organization or Account)"
+        }
+    },
+    "Resources": {
+        "OrganizationAccessAnalyzer": {
+            "Type": "AWS::AccessAnalyzer::Analyzer",
+            "Properties": {
+                "AnalyzerName": {
+                    "Ref": "AnalyzerName"
+                },
+                "Type": {
+                    "Ref": "AnalyzerType"
+                },
+                "ArchiveRules": [
+                    {
+                        "Filter": [
+                                {
+                                    "Contains": [
+                                            "AWS::S3::Bucket",
+                                            "AWS::KMS::Key",
+                                            "AWS::IAM::Role"
+                                        ],
+                                    "Property": "resourceType"
+                                },
+                                {
+                                    "Eq": ["false"],
+                                    "Property": "isPublic"
+                                }
+                            ],
+                        "RuleName": "ArchiveNonPublicResources"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "Organization Access Analysis"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "AnalyzerArn": {
+            "Description": "ARN of the created Access Analyzer",
+            "Value": {
+                "Fn::GetAtt": [
+                    "OrganizationAccessAnalyzer",
+                    "Arn"
+                ]
+            }
+        },
+        "AnalyzerName": {
+            "Description": "Name of the created Access Analyzer",
+            "Value": {
+                "Ref": "AnalyzerName"
+            }
+        }
+    }
+}
