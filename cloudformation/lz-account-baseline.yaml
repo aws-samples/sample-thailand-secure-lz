@@ -1,0 +1,682 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Thailand SLZ Account Baseline - Combines EC2 security settings and S3 Block Public Access configuration"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Common Configuration"
+        Parameters:
+          - LoggingLevel
+      - Label:
+          default: "EC2 Data Protection and Security Configuration"
+        Parameters:
+          - EbsDefaultEncryption
+          - EbsDefaultEncryptionKeyAdministratorArn
+          - EbsDefaultEncryptionKeyAliasName
+          - EbsDefaultEncryptionKeyKeyDescription
+      - Label:
+          default: "IAM Password Policy Configuration"
+        Parameters:
+          - PasswordPolicyMinLength
+          - PasswordPolicyMaxAge
+          - PasswordPolicyRequireUppercase
+          - PasswordPolicyRequireLowercase
+          - PasswordPolicyRequireNumbers
+          - PasswordPolicyRequireSymbols
+          - PasswordPolicyPreventReuse
+      - Label:
+          default: "S3 Public Access Block Configuration"
+        Parameters:
+          - BlockPublicAcls
+          - BlockPublicPolicy
+          - IgnorePublicAcls
+          - RestrictPublicBuckets
+    ParameterLabels:
+      # EC2 Parameters
+      EbsDefaultEncryption:
+        default: "Enable EBS Default Encryption"
+      EbsDefaultEncryptionKeyAdministratorArn:
+        default: "KMS Key Administrator ARN"
+      EbsDefaultEncryptionKeyAliasName:
+        default: "EBS Encryption Key Alias"
+      EbsDefaultEncryptionKeyKeyDescription:
+        default: "EBS Encryption Key Description"
+      # Password Policy Parameters
+      PasswordPolicyMinLength:
+        default: "Minimum Password Length"
+      PasswordPolicyMaxAge:
+        default: "Password Expiration (days)"
+      PasswordPolicyRequireUppercase:
+        default: "Require Uppercase Letters"
+      PasswordPolicyRequireLowercase:
+        default: "Require Lowercase Letters"
+      PasswordPolicyRequireNumbers:
+        default: "Require Numbers"
+      PasswordPolicyRequireSymbols:
+        default: "Require Symbols"
+      PasswordPolicyPreventReuse:
+        default: "Prevent Password Reuse (count)"
+      # S3 Parameters
+      BlockPublicAcls:
+        default: "Block Public ACLs"
+      BlockPublicPolicy:
+        default: "Block Public Policy"
+      IgnorePublicAcls:
+        default: "Ignore Public ACLs"
+      RestrictPublicBuckets:
+        default: "Restrict Public Buckets"
+      # Common Parameters
+      LoggingLevel:
+        default: "Logging Level"
+
+Parameters:
+  # EC2 Parameters
+  EbsDefaultEncryption:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable EBS Default Encryption for all new EBS volumes."
+    Type: String
+
+  EbsDefaultEncryptionKeyAdministratorArn:
+    Type: String
+    Description: "ARN of IAM user/role that will administer the KMS keys."
+
+  EbsDefaultEncryptionKeyAliasName:
+    Type: String
+    Default: alias/ebs-default-encryption
+    Description: "Alias name for the EBS encryption KMS key (prefix with 'alias/')."
+
+  EbsDefaultEncryptionKeyKeyDescription:
+    Type: String
+    Default: "KMS key for EBS volume default encryption"
+    Description: "Description for the EBS encryption KMS key."
+
+  # Password Policy Parameters
+  PasswordPolicyMinLength:
+    Type: Number
+    Default: 14
+    MinValue: 6
+    MaxValue: 128
+    Description: "Minimum length of the password (between 6 and 128 characters)."
+
+  PasswordPolicyMaxAge:
+    Type: Number
+    Default: 90
+    MinValue: 1
+    MaxValue: 365
+    Description: "Number of days before the password expires (between 1 and 365 days)."
+
+  PasswordPolicyRequireUppercase:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Require at least one uppercase letter in the password."
+
+  PasswordPolicyRequireLowercase:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Require at least one lowercase letter in the password."
+
+  PasswordPolicyRequireNumbers:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Require at least one number in the password."
+
+  PasswordPolicyRequireSymbols:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Require at least one non-alphanumeric character in the password."
+
+  PasswordPolicyPreventReuse:
+    Type: Number
+    Default: 24
+    MinValue: 1
+    MaxValue: 24
+    Description: "Number of previous passwords that users are prevented from reusing (between 1 and 24)."
+
+  # S3 Parameters
+  BlockPublicAcls:
+    AllowedValues: ["True", "False"]
+    Default: "True"
+    Description: "Block public access permissions applied to newly added buckets or objects."
+    Type: String
+
+  BlockPublicPolicy:
+    AllowedValues: ["True", "False"]
+    Default: "True"
+    Description: "Block new bucket and access point policies that grant public access."
+    Type: String
+
+  IgnorePublicAcls:
+    AllowedValues: ["True", "False"]
+    Default: "True"
+    Description: "Ignore all ACLs that grant public access to buckets and objects."
+    Type: String
+
+  RestrictPublicBuckets:
+    AllowedValues: ["True", "False"]
+    Default: "True"
+    Description: "Ignore public and cross-account access for buckets with policies that grant public access."
+    Type: String
+
+  # Backup Destination Account
+  BackupDestinationAccountId:
+    Type: String
+    Description: "Account ID of the backup destination account (for cross-account access)."
+    Default: "123456789012"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: "Must be a 12-digit numeric string"
+
+  # Common Parameters
+  LoggingLevel:
+    AllowedValues: ["CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING"]
+    Default: "INFO"
+    Description: "The logging level for the Lambda functions."
+    Type: String
+
+Mappings:
+  Constants:
+    KMSAlias:
+      Name: "alias/account-baseline-log-group-encryption"
+
+Resources:
+  # KMS Keys
+  EbsDefaultEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Ref EbsDefaultEncryptionKeyKeyDescription
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: kms:*
+            Resource: "*"
+          - Sid: Allow Key Administrator
+            Effect: Allow
+            Principal:
+              AWS: !Ref EbsDefaultEncryptionKeyAdministratorArn
+            Action:
+              - kms:Create*
+              - kms:Describe*
+              - kms:Enable*
+              - kms:List*
+              - kms:Put*
+              - kms:Update*
+              - kms:Revoke*
+              - kms:Disable*
+              - kms:Get*
+              - kms:Delete*
+              - kms:TagResource
+              - kms:UntagResource
+              - kms:ScheduleKeyDeletion
+              - kms:CancelKeyDeletion
+            Resource: "*"
+          - Sid: Allow EBS and Backup Services
+            Effect: Allow
+            Principal:
+              AWS:
+              - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+              - !Sub "arn:aws:iam::${BackupDestinationAccountId}:root"
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          - Sid: Allow attachment of persistent resources
+            Effect: Allow
+            Principal:
+              AWS:
+              - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+              - !Sub "arn:aws:iam::${BackupDestinationAccountId}:root"
+            Action:
+              - kms:CreateGrant
+              - kms:ListGrants
+              - kms:RevokeGrant
+            Resource: "*"
+            Condition:
+              Bool:
+                "kms:GrantIsForAWSResource": true
+      Tags:
+        - Key: Purpose
+          Value: EBS Default Encryption
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  EbsDefaultEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Ref EbsDefaultEncryptionKeyAliasName
+      TargetKeyId: !Ref EbsDefaultEncryptionKey
+
+  CloudWatchEncryptionKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: "Account Baseline CloudWatch LogGroup Key"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "key-default-1"
+        Statement:
+          - Sid: "Allow Key Administration"
+            Effect: "Allow"
+            Principal:
+              AWS: !Ref EbsDefaultEncryptionKeyAdministratorArn
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+            Resource: "*"
+          - Sid: "Allow CloudWatch Logs Service"
+            Effect: "Allow"
+            Principal:
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action:
+              - "kms:Decrypt*"
+              - "kms:Encrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:ReEncrypt*"
+              - "kms:Describe*"
+            Resource: "*"
+            Condition:
+              ArnEquals:
+                "kms:EncryptionContext:aws:logs:arn": !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+          - Sid: "Enable IAM User Permissions"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - "kms:*"
+            Resource: "*"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  CloudWatchEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !FindInMap [Constants, KMSAlias, Name]
+      TargetKeyId: !Ref CloudWatchEncryptionKey
+
+  # EC2 Security Configuration
+  EC2LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Description: "Used by the Lambda to update the EC2 Data Protection and Security configuration and IAM password policy."
+      Policies:
+        - PolicyName: EC2LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - "ec2:GetEbsEncryptionByDefault"
+                  - "ec2:EnableEbsEncryptionByDefault"
+                  - "ec2:GetEbsDefaultKmsKeyId"
+                  - "ec2:DisableEbsEncryptionByDefault"
+                  - "ec2:ResetEbsDefaultKmsKeyId"
+                  - "ec2:ModifyEbsDefaultKmsKeyId"
+                  - "sts:GetCallerIdentity"
+                  - "iam:UpdateAccountPasswordPolicy"
+                  - "kms:Describe*"
+                Resource: "*"
+      Tags:
+        - Key: identity-perimeter-exception
+          Value: true
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+      RoleName: !Sub "ec2-data-protection-lambda-${AWS::Region}"
+
+  EC2DataProtectionSecurityUpdateLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          import os
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(os.environ['LOGGING_LEVEL'])
+          ec2_client = boto3.client("ec2")
+          sts_client = boto3.client('sts')
+          account_id = sts_client.get_caller_identity()["Account"]
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {event}")
+              physical_id = event['LogicalResourceId']
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      set_ebs_default_encryption(event['ResourceProperties'])
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  elif event['RequestType'] == 'Delete':
+                      reset_ebs_default_encryption()
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  else:
+                      logger.error(f"Invalid request type: {event['RequestType']}")
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+          def set_ebs_default_encryption(properties):
+              try:
+                  ebskmskeyid = properties['EbsDefaultEncryptionKMSKeyAlias'].lower()
+                  ec2_client.enable_ebs_encryption_by_default()
+                  ec2_client.modify_ebs_default_kms_key_id(KmsKeyId=ebskmskeyid)
+                  logger.info("EC2 Data Protection and Security updated successfully")
+              except ClientError as e:
+                  logger.error(f"Error updating EC2 Data Protection and Security configuration: {str(e)}")
+                  raise
+          def reset_ebs_default_encryption():
+              try:
+                  ec2_client.reset_ebs_default_kms_key_id()
+                  logger.info("EC2 Data Protection and Security EBS Default Encryption reset successfully")
+              except ClientError as e:
+                  logger.error(f"Error resetting EC2 Data Protection and Security configuration: {str(e)}")
+                  raise
+      Description: "Updates and deletes the account-level EC2 Data Protection and Security configuration at account level in a region."
+      Environment:
+        Variables:
+          LOGGING_LEVEL: !Ref LoggingLevel
+      FunctionName: "ec2-data-protection-security-update"
+      Handler: index.lambda_handler
+      LoggingConfig:
+        LogGroup: !Ref EC2DataProtectionSecurityUpdateLambdaLogGroup
+      MemorySize: 128
+      PackageType: Zip
+      Role: !GetAtt EC2LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 60
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  EC2DataProtectionSecurityUpdateLambdaLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt CloudWatchEncryptionKey.Arn
+      LogGroupName: "/aws/lambda/ec2-data-protection-security-update"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  EC2DataProtectionSecurity:
+    Type: "Custom::EC2DataProtectionSecurity"
+    Properties:
+      EbsDefaultEncryption: !Ref EbsDefaultEncryption
+      EbsDefaultEncryptionKMSKeyAlias: !Ref EbsDefaultEncryptionKeyAlias
+      ServiceToken: !GetAtt EC2DataProtectionSecurityUpdateLambda.Arn
+
+  # Password Policy Configuration
+  SetPasswordPolicyLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: "/aws/lambda/SetPasswordPolicyLambda"
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt CloudWatchEncryptionKey.Arn
+
+  SetPasswordPolicyLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: SetPasswordPolicyLambdaLogGroup
+    Properties:
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      Role: !GetAtt EC2LambdaExecutionRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {event}")
+              iam = boto3.client('iam')
+              
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      logger.info("Updating account password policy")
+                      iam.update_account_password_policy(
+                          MinimumPasswordLength=int(event['ResourceProperties']['MinimumPasswordLength']),
+                          RequireSymbols=event['ResourceProperties']['RequireSymbols'] == 'true',
+                          RequireNumbers=event['ResourceProperties']['RequireNumbers'] == 'true',
+                          RequireUppercaseCharacters=event['ResourceProperties']['RequireUppercaseCharacters'] == 'true',
+                          RequireLowercaseCharacters=event['ResourceProperties']['RequireLowercaseCharacters'] == 'true',
+                          MaxPasswordAge=int(event['ResourceProperties']['MaxPasswordAge']),
+                          PasswordReusePrevention=int(event['ResourceProperties']['PasswordReusePrevention'])
+                      )
+                      logger.info("Successfully updated account password policy")
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  elif event['RequestType'] == 'Delete':
+                      logger.info("Delete request received. No action taken on password policy.")
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  logger.error(f"Error updating password policy: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  CustomPasswordPolicy:
+    Type: Custom::SetPasswordPolicy
+    DependsOn: SetPasswordPolicyLambda
+    Properties:
+      ServiceToken: !GetAtt SetPasswordPolicyLambda.Arn
+      MinimumPasswordLength: !Ref PasswordPolicyMinLength
+      RequireSymbols: !Ref PasswordPolicyRequireSymbols
+      RequireNumbers: !Ref PasswordPolicyRequireNumbers
+      RequireUppercaseCharacters: !Ref PasswordPolicyRequireUppercase
+      RequireLowercaseCharacters: !Ref PasswordPolicyRequireLowercase
+      MaxPasswordAge: !Ref PasswordPolicyMaxAge
+      PasswordReusePrevention: !Ref PasswordPolicyPreventReuse
+
+  # S3 Block Public Access Configuration
+  S3LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Description: "Used by the S3 Public Access Block Lambda to update the account-level S3 public access block configuration."
+      Policies:
+        - PolicyName: S3LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - "s3:DeletePublicAccessBlock"
+                  - "s3:PutAccountPublicAccessBlock"
+                  - "sts:GetCallerIdentity"
+                Resource: "*"
+      RoleName: !Sub "s3-public-access-block-update-${AWS::Region}"
+      Tags:
+        - Key: identity-perimeter-exception
+          Value: true
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  S3PublicAccessBlockLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          import os
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(os.environ['LOGGING_LEVEL'])
+          s3control_client = boto3.client("s3control")
+          sts_client = boto3.client('sts')
+          account_id = sts_client.get_caller_identity()["Account"]
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {event}")
+              physical_id = event['LogicalResourceId']
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      set_public_access_block(event['ResourceProperties'])
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  elif event['RequestType'] == 'Delete':
+                      delete_public_access_block()
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  else:
+                      logger.error(f"Invalid request type: {event['RequestType']}")
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+          def set_public_access_block(properties):
+              try:
+                  s3control_client.put_public_access_block(
+                      PublicAccessBlockConfiguration={
+                          'BlockPublicAcls': properties['BlockPublicAcls'].lower() == 'true',
+                          'BlockPublicPolicy': properties['BlockPublicPolicy'].lower() == 'true',
+                          'IgnorePublicAcls': properties['IgnorePublicAcls'].lower() == 'true',
+                          'RestrictPublicBuckets': properties['RestrictPublicBuckets'].lower() == 'true'
+                      },
+                      AccountId=account_id
+                  )
+                  logger.info("S3 Public Access Block configuration updated successfully")
+              except ClientError as e:
+                  logger.error(f"Error updating S3 Public Access Block configuration: {str(e)}")
+                  raise
+          def delete_public_access_block():
+              try:
+                  s3control_client.delete_public_access_block(AccountId=account_id)
+                  logger.info("S3 Public Access Block configuration deleted successfully")
+              except ClientError as e:
+                  if e.response['Error']['Code'] == 'NoSuchPublicAccessBlockConfiguration':
+                      logger.info("S3 Public Access Block configuration was already deleted or did not exist")
+                  else:
+                      logger.error(f"Error deleting S3 Public Access Block configuration: {str(e)}")
+                      raise
+      Description: "Updates and deletes the account-level S3 Public Access Block configuration."
+      Environment:
+        Variables:
+          LOGGING_LEVEL: !Ref LoggingLevel
+      FunctionName: "s3-public-access-block-update"
+      Handler: index.lambda_handler
+      LoggingConfig:
+        LogGroup: !Ref S3PublicAccessBlockLambdaLogGroup
+      MemorySize: 128
+      PackageType: Zip
+      Role: !GetAtt S3LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 60
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  S3PublicAccessBlockLambdaLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt CloudWatchEncryptionKey.Arn
+      LogGroupName: "/aws/lambda/s3-public-access-block-update"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  S3PublicAccessBlock:
+    Type: "Custom::S3PublicAccessBlock"
+    Properties:
+      BlockPublicAcls: !Ref BlockPublicAcls
+      BlockPublicPolicy: !Ref BlockPublicPolicy
+      IgnorePublicAcls: !Ref IgnorePublicAcls
+      RestrictPublicBuckets: !Ref RestrictPublicBuckets
+      ServiceToken: !GetAtt S3PublicAccessBlockLambda.Arn
+
+Outputs:
+  EbsDefaultEncryptionKMSKeyId:
+    Description: ID of the created KMS key for EBS encryption
+    Value: !Ref EbsDefaultEncryptionKey
+
+  EbsDefaultEncryptionKMSKeyArn:
+    Description: ARN of the created KMS key for EBS encryption
+    Value: !GetAtt EbsDefaultEncryptionKey.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-EbsDefaultEncryptionKMSKeyArn"
+
+  EbsDefaultEncryptionKMSKeyAlias:
+    Description: Alias of the created KMS key for EBS encryption
+    Value: !Ref EbsDefaultEncryptionKeyAliasName
+
+  CloudWatchEncryptionKeyArn:
+    Description: ARN of the created KMS key for CloudWatch logs
+    Value: !GetAtt CloudWatchEncryptionKey.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudWatchEncryptionKeyArn"
+
+  CloudWatchEncryptionKeyAlias:
+    Description: Alias of the created KMS key for CloudWatch logs
+    Value: !FindInMap [Constants, KMSAlias, Name]
+
+  S3BlockPublicAccessStatus:
+    Description: Status of S3 Block Public Access configuration
+    Value: !If [IsS3BlockingEnabled, "Enabled", "Disabled"]
+
+Conditions:
+  IsS3BlockingEnabled: !And
+    - !Equals [!Ref BlockPublicAcls, "True"]
+    - !Equals [!Ref BlockPublicPolicy, "True"]
+    - !Equals [!Ref IgnorePublicAcls, "True"]
+    - !Equals [!Ref RestrictPublicBuckets, "True"]
