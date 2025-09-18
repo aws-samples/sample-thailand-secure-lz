@@ -1,0 +1,127 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Thailand SLZ - create IAM Identity Center (IDC) Permission Sets. Run this in the same region as where the IDC is hosted.",
+    "Parameters": {
+        "SSOInstanceArn": {
+            "Type": "String",
+            "AllowedPattern": "arn:(aws|aws-us-gov|aws-cn|aws-iso|aws-iso-b):sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}",
+            "Description": "The ARN of the IAM Identity Center instance (starts with 'arn:aws:sso:::instance/ssoins-')"
+        }
+    },
+    "Resources": {
+        "SLZDeveloperAccess": {
+            "Type": "AWS::SSO::PermissionSet",
+            "Properties": {
+                "InstanceArn": {
+                    "Ref": "SSOInstanceArn"
+                },
+                "Name": "SLZDeveloperAccess",
+                "Description": "Developer Access Permission Set for SLZ",
+                "ManagedPolicies": [
+                    "arn:aws:iam::aws:policy/ReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AmazonQDeveloperAccess",
+                    "arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess",
+                    "arn:aws:iam::aws:policy/AmazonEC2FullAccess",
+                    "arn:aws:iam::aws:policy/AmazonS3FullAccess",
+                    "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess",
+                    "arn:aws:iam::aws:policy/AWSLambda_FullAccess",
+                    "arn:aws:iam::aws:policy/AmazonRDSFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonCloudWatchEvidentlyFullAccess"
+                ],
+                "SessionDuration": "PT6H",
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "Security Control"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "SLZProductionSupportAccess": {
+            "Type": "AWS::SSO::PermissionSet",
+            "Properties": {
+                "InstanceArn": {
+                    "Ref": "SSOInstanceArn"
+                },
+                "Name": "SLZProductionSupportAccess",
+                "Description": "Production Support Access Permission Set for SLZ",
+                "ManagedPolicies": [
+                    "arn:aws:iam::aws:policy/PowerUserAccess"
+                ],
+                "SessionDuration": "PT1H",
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "Security Control"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "SLZSecurityAccess": {
+            "Type": "AWS::SSO::PermissionSet",
+            "Properties": {
+                "InstanceArn": {
+                    "Ref": "SSOInstanceArn"
+                },
+                "Name": "SLZSecurityAccess",
+                "Description": "Security Access Permission Set for SLZ",
+                "ManagedPolicies": [
+                    "arn:aws:iam::aws:policy/ReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AWSSecurityHubFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonGuardDutyFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonDetectiveFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonInspector2FullAccess",
+                    "arn:aws:iam::aws:policy/AWSWAFConsoleFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonAthenaFullAccess"
+                ],
+                "SessionDuration": "PT2H",
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "Security Control"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "SLZAdministratorAccess": {
+            "Type": "AWS::SSO::PermissionSet",
+            "Properties": {
+                "InstanceArn": {
+                    "Ref": "SSOInstanceArn"
+                },
+                "Name": "SLZAdministratorAccess",
+                "Description": "Administrator Access Permission Set for SLZ",
+                "ManagedPolicies": [
+                    "arn:aws:iam::aws:policy/AdministratorAccess"
+                ],
+                "SessionDuration": "PT1H",
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "Security Control"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        
+    }
+}
