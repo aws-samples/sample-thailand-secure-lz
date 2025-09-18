@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Thailand SLZ - Nested Stack for Organization Setup
+  This template creates a nested stack that deploys organization structure, KMS keys, IAM roles, and service access in the correct order.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "S3 Configuration"
+        Parameters:
+          - S3BucketName
+          - S3KeyPrefix
+      - Label:
+          default: "Organization Parameters"
+        Parameters:
+          - OrganizationRootId
+      - Label:
+          default: "KMS and IAM Parameters"
+        Parameters:
+          - KeyAdministratorArn
+      - Label:
+          default: "Service Access Parameters"
+        Parameters:
+          - EnableGuardDuty
+          - EnableSecurityHub
+          - EnableInspector
+          - EnableDetective
+          - EnableFirewallManager
+          - EnableIPAM
+          - EnableIAMAccessAnalyzer
+          - EnableIAM
+          - EnableCloudFormation
+          - EnableBackup
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: Name of the S3 bucket containing CloudFormation templates
+
+  S3KeyPrefix:
+    Type: String
+    Description: S3 key prefix for CloudFormation templates (leave empty if templates are in the root of the bucket)
+    Default: ""
+
+  OrganizationRootId:
+    Type: String
+    Description: AWS Organization Root OU ID (format r-XXXX)
+
+  OrganizationId:
+    Type: String
+    Description: AWS Organization ID (format o-XXXX)
+
+  KeyAdministratorArn:
+    Type: String
+    Description: ARN of the IAM role or user that will administer the KMS keys (format arn:aws:iam::ACCOUNT-ID:role/XXXXX)
+    AllowedPattern: "arn:aws:iam::[0-9]{12}:(role|user)/.*"
+    ConstraintDescription: "Must be a valid IAM role or user ARN"
+
+  EnableGuardDuty:
+    Type: String
+    Description: Enable trusted access for GuardDuty
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+  EnableSecurityHub:
+    Type: String
+    Description: Enable trusted access for Security Hub
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+  EnableInspector:
+    Type: String
+    Description: Enable trusted access for Inspector
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+  EnableDetective:
+    Type: String
+    Description: Enable trusted access for Detective
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+  EnableFirewallManager:
+    Type: String
+    Description: Enable trusted access for Firewall Manager
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+  EnableIPAM:
+    Type: String
+    Description: Enable trusted access for IPAM
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+  EnableIAMAccessAnalyzer:
+    Type: String
+    Description: Enable trusted access for IAM Access Analyzer
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+  EnableIAM:
+    Type: String
+    Description: Enable trusted access for IAM
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+  EnableCloudFormation:
+    Type: String
+    Description: Enable trusted access for CloudFormation
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+  EnableBackup:
+    Type: String
+    Description: Enable trusted access for Backup
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+Conditions:
+  HasKeyPrefix: !Not [!Equals [!Ref S3KeyPrefix, ""]]
+
+Resources:
+  OrganizationStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/${S3KeyPrefix}lz-organization.json
+      Parameters:
+        OrganizationRootId: !Ref OrganizationRootId
+      TimeoutInMinutes: 30
+
+  CloudFormationStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/${S3KeyPrefix}lz-stackset-roles.yaml
+      Parameters:
+        OrganizationId: !Ref OrganizationId
+      TimeoutInMinutes: 30
+
+  OrganizationKmsIamStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: OrganizationStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/${S3KeyPrefix}lz-organization-kms-iam.json
+      Parameters:
+        KeyAdministratorArn: !Ref KeyAdministratorArn
+        OrganizationId: !Ref OrganizationId
+      TimeoutInMinutes: 30
+
+  OrganizationServiceAccessStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: OrganizationKmsIamStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/${S3KeyPrefix}lz-organization-service-access.yaml
+      Parameters:
+        GuardDutyEnable: !Ref EnableGuardDuty
+        SecurityHubEnable: !Ref EnableSecurityHub
+        InspectorEnable: !Ref EnableInspector
+        DetectiveEnable: !Ref EnableDetective
+        FirewallManagerEnable: !Ref EnableFirewallManager
+        IPAMEnable: !Ref EnableIPAM
+        IAMAccessAnalyzerEnable: !Ref EnableIAMAccessAnalyzer
+        IAMEnable: !Ref EnableIAM
+        CloudFormationEnable: !Ref EnableCloudFormation
+        BackupEnable: !Ref EnableBackup
+      TimeoutInMinutes: 30
+
+Outputs:
+  OrganizationStackId:
+    Description: Organization Stack ID
+    Value: !Ref OrganizationStack
+
+  OrganizationKmsIamStackId:
+    Description: Organization KMS and IAM Stack ID
+    Value: !Ref OrganizationKmsIamStack
+
+  OrganizationServiceAccessStackId:
+    Description: Organization Service Access Stack ID
+    Value: !Ref OrganizationServiceAccessStack
+
+  OrganizationRootId:
+    Description: "Root ID from Organizations API"
+    Value: !Ref OrganizationRootId
+    Export:
+      Name: "lz-organization-RootId"
+
+  OrganizationId:
+    Description: "Organization ID from Organizations API"
+    Value: !Ref OrganizationId
+    Export:
+      Name: "lz-organization-OrganizationId"
