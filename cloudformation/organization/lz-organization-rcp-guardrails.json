@@ -1,0 +1,109 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates baseline guardrail Resource Control Policy for S3 and Confused Deputy Protection",
+    "Parameters": {
+        "BaselineResourceGuardrailPolicyName": {
+            "Type": "String",
+            "Default": "th-lza-resource-guardrail",
+            "Description": "Name of the baseline guardrail Resource Control Policy"
+        },
+        "PolicyDescription": {
+            "Type": "String",
+            "Default": "RCP to ensure TLS connection for S3",
+            "Description": "Description for the Resource Control Policy"
+        },
+        "OrganizationId": {
+            "Type": "String",
+            "Default": "o-",
+            "Description": "ID of the AWS Organization (starts with 'o-')"
+        },
+        "TargetOrganizationalUnitIds": {
+            "Type": "CommaDelimitedList",
+            "Description": "ID of the Organizational Unit to attach the policy (starts with 'ou-')"
+        }
+    },
+    "Resources": {
+        "BaselineResourceGuardrailPolicy": {
+            "Type": "AWS::Organizations::Policy",
+            "Properties": {
+                "Content": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "RCPEnforceConfusedDeputyProtection",
+                            "Effect": "Deny",
+                            "Principal": "*",
+                            "Action": [
+                                "s3:*",
+                                "sqs:*",
+                                "secretsmanager:*"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "StringNotEqualsIfExists": {
+                                    "aws:SourceOrgID": {
+                                        "Ref": "OrganizationId"
+                                    }
+                                },
+                                "Bool": {
+                                    "aws:PrincipalIsAWSService": "true"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "EnforceS3TlsVersion",
+                            "Effect": "Deny",
+                            "Principal": "*",
+                            "Action": "s3:*",
+                            "Resource": "*",
+                            "Condition": {                
+                                "NumericLessThan": {
+                                    "s3:TlsVersion": [
+                                        "1.2"
+                                    ]
+                                }
+                            }
+                        }
+                    ]
+                },
+                "Description": {
+                    "Ref": "PolicyDescription"
+                },
+                "Name": {
+                    "Ref": "BaselineResourceGuardrailPolicyName"
+                },
+                "Type": "RESOURCE_CONTROL_POLICY",
+                "TargetIds": {
+                    "Ref": "TargetOrganizationalUnitIds"
+                },
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "Security Control"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "BaselineResourceGuardrailPolicyId": {
+            "Description": "ID of the created baseline Resource Control Policy",
+            "Value": {
+                "Ref": "BaselineResourceGuardrailPolicy"
+            }
+        },
+        "BaselineResourceGuardrailPolicyArn": {
+            "Description": "ARN of the created baseline Resource Control Policy",
+            "Value": {
+                "Fn::GetAtt": [
+                    "BaselineResourceGuardrailPolicy",
+                    "Arn"
+                ]
+            }
+        }
+    }
+}
