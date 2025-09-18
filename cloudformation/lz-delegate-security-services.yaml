@@ -1,0 +1,348 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Set delegated administration account for AWS native security services Security Hub, GuardDuty, IAM Access Analyzer, and Amazon Inspector at AWS Organization level."
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Lambda Function Configuration"
+        Parameters:
+          - LoggingLevel
+      - Label:
+          default: "AWS Native Security Services Configuration"
+        Parameters:
+          - DelegatedSecurityAdminAccount
+          - GuardDutyEnable
+          - SecurityHubEnable
+          - IAMAccessAnalyzerEnable
+          - InspectorEnable
+      - Label:
+          default: "Security Services Configuration"
+    ParameterLabels:
+      DelegatedSecurityAdminAccount:
+        default: "Fill in Security Audit Admin Account"
+      GuardDutyEnable:
+        default: "GuardDuty"
+      SecurityHubEnable:
+        default: "Security Hub"
+      IAMAccessAnalyzerEnable:
+        default: "IAM Access Analyzer"
+      InspectorEnable:
+        default: "Amazon Inspector"
+      LoggingLevel:
+        default: "Logging Level"
+
+Parameters:
+  DelegatedSecurityAdminAccount:
+    Type: String
+    Description: "AWS Account ID to be designated as Security Hub, GuardDuty administrator (12-digit)"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: "Must be a 12-digit numeric string"
+  GuardDuty:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable GuardDuty to identify threats in the AWS environment."
+    Type: String
+  SecurityHub:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable Security Hub for continuous compliance monitoring."
+    Type: String
+  IAMAccessAnalyzer:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable IAM Access Analyzer to identify unauthorized external sharing of resources."
+    Type: String
+  Inspector:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable Amazon Inspector for vulnerability assessment and security monitoring."
+    Type: String
+  EncryptionKeyAdministratorArn:
+    Type: String
+    Description: ARN of IAM user/role that will administer the KMS key
+  SecurityServicesAdminCloudWatchEncryptionKeyAliasName:
+    Type: String
+    Default: alias/securityservicesadmin-log-group-encryption
+    Description: Alias name for the KMS key (prefix with 'alias/', cannot use 'alias/aws' which is reserved for AWS managed keys)
+  LoggingLevel:
+    AllowedValues: ["CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING"]
+    Default: "INFO"
+    Description: "The logging level for the Lambda function."
+    Type: String
+
+Resources:
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Description: "Used by the Lambda to update the AWS native Security Services configuration."
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - "guardduty:EnableOrganizationAdminAccount"
+                  - "guardduty:DisableOrganizationAdminAccount"
+                  - "inspector2:EnableDelegatedAdminAccount"
+                  - "inspector2:DisableDelegatedAdminAccount"
+                  - "access-analyzer:CreateAnalyzer"
+                  - "access-analyzer:DeleteAnalyzer"
+                  - "access-analyzer:UpdateAnalyzer"
+                  - "access-analyzer:GetAnalyzer"
+                  - "detective:EnableOrganizationAdminAccount"
+                  - "detective:DisableOrganizationAdminAccount"
+                  - "fms:AssociateAdminAccount"
+                  - "fms:DisassociateAdminAccount"
+                  - "sts:GetCallerIdentity"
+                  - "organizations:EnableOrganizationAdminAccount"
+                  - "organizations:DisableOrganizationAdminAccount"
+                  - "organizations:EnableAWSServiceAccess"
+                  - "organizations:RegisterDelegatedAdministrator"
+                  - "organizations:DeregisterDelegatedAdministrator"
+                  - "organizations:ListDelegatedAdministrators"
+                  - "organizations:ListAWSServiceAccessForOrganization"
+                  - "organizations:DescribeOrganizationalUnit"
+                  - "organizations:DescribeAccount"
+                  - "organizations:DescribeOrganization"
+                  - "organizations:ListAccounts"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "iam:CreateServiceLinkedRole"
+                  - "iam:GetRole"
+                  - "iam:ListRoles"
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/inspector2.amazonaws.com/AWSServiceRoleForAmazonInspector2"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/*"
+      RoleName: !Sub "security-services-admin-delegation-lambda-${AWS::Region}"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  SecurityServicesAdminDelegationLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          import os
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(os.environ['LOGGING_LEVEL'])
+          guardduty_client = boto3.client("guardduty")
+          inspector_client = boto3.client("inspector2")
+          organizations_client = boto3.client("organizations")
+          sts_client = boto3.client('sts')
+          account_id = sts_client.get_caller_identity()["Account"]
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {event}")
+              physical_id = event['LogicalResourceId']
+              delegated_admin_account_id = event['ResourceProperties']['DelegatedSecurityAdminAccount']
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      if event['ResourceProperties']['IAMAccessAnalyzer'] == 'true':
+                          set_service_organization_admin(delegated_admin_account_id, 'access-analyzer.amazonaws.com')
+                      elif event['ResourceProperties']['IAMAccessAnalyzer'] == 'false':
+                          reset_service_organization_admin(delegated_admin_account_id, 'access-analyzer.amazonaws.com')
+                      if event['ResourceProperties']['GuardDuty'] == 'true':
+                          set_guardduty_organization_admin(delegated_admin_account_id)
+                      elif event['ResourceProperties']['GuardDuty'] == 'false':
+                          reset_guardduty_organization_admin(delegated_admin_account_id)
+                      if event['ResourceProperties']['Inspector'] == 'true':
+                          set_inspector_organization_admin(delegated_admin_account_id)
+                      elif event['ResourceProperties']['Inspector'] == 'false':
+                          reset_inspector_organization_admin(delegated_admin_account_id)
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  elif event['RequestType'] == 'Delete':
+                      reset_service_organization_admin(delegated_admin_account_id, 'access-analyzer.amazonaws.com')
+                      reset_guardduty_organization_admin(delegated_admin_account_id)
+                      reset_inspector_organization_admin(delegated_admin_account_id)
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  else:
+                      logger.error(f"Invalid request type: {event['RequestType']}")
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+          def set_guardduty_organization_admin(account_id):
+              try:
+                  guardduty_client.enable_organization_admin_account(AdminAccountId=account_id)
+                  logger.info("GuardDuty delegated security admin account updated successfully")
+              except ClientError as e:
+                  if 'account is already enabled' in e.response['Error']['Message'].lower() :
+                      logger.info(f"GuardDuty delegated security admin account {account_id} is already a delegated administrator for your organization. {str(e)}")
+                  else:
+                      logger.error(f"Error updating GuardDuty delegated security admin account configuration: {str(e)}")
+                      raise
+          def reset_guardduty_organization_admin(account_id):
+              try:
+                  guardduty_client.disable_organization_admin_account(AdminAccountId=account_id)
+                  logger.info("GuardDuty delegated security admin account reset successfully")
+              except ClientError as e:
+                  logger.error(f"Error resetting GuardDuty delegated security admin account configuration: {str(e)}")
+                  raise
+          def set_service_organization_admin(account_id, service):
+              try:
+                  organizations_client.register_delegated_administrator(AccountId=account_id, ServicePrincipal=service)
+                  logger.info(f"{service} delegated security admin account updated successfully")
+              except ClientError as e:
+                  if e.response['Error']['Code'] == 'AccountAlreadyRegisteredException':
+                      logger.info(f"{service} delegated security admin account {account_id} is already a delegated administrator for your organization. {str(e)}")
+                  else:
+                      logger.error(f"Error updating {service} delegated security admin account configuration: {str(e)}")
+                      raise
+          def reset_service_organization_admin(account_id, service):
+              try:
+                  organizations_client.deregister_delegated_administrator(AccountId=account_id, ServicePrincipal=service)
+                  logger.info(f"{service} delegated security admin account reset successfully")
+              except ClientError as e:
+                  logger.error(f"Error resetting GuardDuty delegated security admin account configuration: {str(e)}")
+                  raise
+          def set_inspector_organization_admin(account_id):
+              try:
+                  inspector_client.enable_delegated_admin_account(delegatedAdminAccountId=account_id)
+                  logger.info("Inspector delegated security admin account updated successfully")
+              except ClientError as e:
+                  if 'already enabled' in e.response['Error']['Message'].lower():
+                      logger.info(f"Inspector delegated security admin account {account_id} is already a delegated administrator for your organization. {str(e)}")
+                  else:
+                      logger.error(f"Error updating Inspector delegated security admin account configuration: {str(e)}")
+                      raise
+          def reset_inspector_organization_admin(account_id):
+              try:
+                  inspector_client.disable_delegated_admin_account(delegatedAdminAccountId=account_id)
+                  logger.info("Inspector delegated security admin account reset successfully")
+              except ClientError as e:
+                  logger.error(f"Error resetting Inspector delegated security admin account configuration: {str(e)}")
+                  raise
+      Description: "Updates and deletes the AWS native Security Services admin delegation configuration at organization level in a region."
+      Environment:
+        Variables:
+          LOGGING_LEVEL: !Ref LoggingLevel
+      FunctionName: "security-services-admin-delegation-update"
+      Handler: index.lambda_handler
+      LoggingConfig:
+        LogGroup: !Ref SecurityServicesAdminDelegationLambdaLogGroup
+      MemorySize: 128
+      PackageType: Zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 60
+      ReservedConcurrentExecutions: 1
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  SecurityServicesAdminDelegationLambdaLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt SecurityServicesAdminCloudWatchEncryptionKey.Arn
+      LogGroupName: "/aws/lambda/security-services-admin-delegation-update-log"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  SecurityServicesAdminCloudWatchEncryptionKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: "Security Services Admin Delegation CloudWatch LogGroup Key"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "key-default-1"
+        Statement:
+          - Sid: "Allow Key Administration"
+            Effect: "Allow"
+            Principal:
+              AWS:
+                - !Ref EncryptionKeyAdministratorArn
+                - !Sub arn:aws:iam::${AWS::AccountId}:role/AWSCloudFormationStackSetExecutionRole
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+              - "kms:GenerateDataKey"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+            Resource: "*"
+          - Sid: "Allow CloudWatch Logs Service"
+            Effect: "Allow"
+            Principal:
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action:
+              - "kms:Decrypt*"
+              - "kms:Encrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:ReEncrypt*"
+              - "kms:Describe*"
+            Resource: "*"
+            Condition:
+              ArnEquals:
+                "kms:EncryptionContext:aws:logs:arn": !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+          - Sid: "Enable IAM User Permissions"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - "kms:*"
+            Resource: "*"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  SecurityServicesAdminEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Ref SecurityServicesAdminCloudWatchEncryptionKeyAliasName
+      TargetKeyId: !Ref SecurityServicesAdminCloudWatchEncryptionKey
+
+  SecurityServicesAdminDelegation:
+    Type: "Custom::SecurityServicesAdminDelegation"
+    Properties:
+      GuardDuty: !Ref GuardDuty
+      SecurityHub: !Ref SecurityHub
+      IAMAccessAnalyzer: !Ref IAMAccessAnalyzer
+      Inspector: !Ref Inspector
+      DelegatedSecurityAdminAccount: !Ref DelegatedSecurityAdminAccount
+      ServiceToken: !GetAtt SecurityServicesAdminDelegationLambda.Arn
+
+  SecurityHubOrganizationAdmin:
+    Type: "AWS::SecurityHub::DelegatedAdmin"
+    Properties:
+      AdminAccountId: !Ref DelegatedSecurityAdminAccount
+
+Outputs:
+  SecurityServicesAdminDelegationLambda:
+    Description: Lambda function for updating AWS native security services configuration.
+    Value: !Ref SecurityServicesAdminDelegationLambda
