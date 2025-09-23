@@ -62,7 +62,7 @@ Complete these validation checks before starting the deployment of the SLZ.
 ## Installation Steps
 1. *HOME-REGION* is Thailand (ap-southeast-7).
 2. Create KMS Customer Managed Key (Symmetric, for Encrypt and Decrypt, single-region), KMS-CMK, for AWS Control Tower. This will be referenced during the setup of the Control Tower service in Step 3.
-    - Region: Malaysia ap-southeast-5
+    - Region: Malaysia ap-southeast-7
     - Key Type: Symmetric Key
     - Key Usage: Encrypt and Decrypt.
     - Regionality: Single-Region
