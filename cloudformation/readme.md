@@ -142,7 +142,7 @@ Complete these validation checks before starting the deployment of the SLZ.
     - Foundational OU: Security 
     - Additional OU: Opt out of creating OU
     - Create a new log-archive account and a new audit account as part of Control Tower implementation.
-    - Enable IAM Identity Center (IDC) in Malaysia ap-southeast-5 region. You will receive an email invitation from AWS (no-reply@login.awsapps.com), on starting the creation of Control Tower landing zone. Take note of the AWS access portal URL provided in the email for your organization users to login across the accounts.
+    - Enable IAM Identity Center (IDC) ( Using Singapore ap-southeast-1 region during unavalable of IDC in Thailand region. You will receive an email invitation from AWS (no-reply@login.awsapps.com), on starting the creation of Control Tower landing zone. Take note of the AWS access portal URL provided in the email for your organization users to login across the accounts.
     - AWS CloudTrail configuration enable
     - Set Log configuration for S3 to 1 year for both S3 retention and S3 access logging
     - Specify the KMS key id (alias "control-tower-key") for Control Tower encryption 
