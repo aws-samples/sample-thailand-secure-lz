@@ -28,7 +28,7 @@ The Secure Landing Zone (SLZ) provides Thai public sector organizations, Custome
 
 ## Prerequisites:
 Complete these validation checks before starting the deployment of the SLZ. 
-1. Have Your AWS management account ready. If not can create by this link https://aws.amazon.com/resources/create-account/
+1. Have your AWS management account ready. If not can create by this link https://aws.amazon.com/resources/create-account/
 2. Login with the user that has an Administrator access
 3. Create and AWS organization in management account. Go to AWS Organizaion , Click “Create an organization”. Write down the Orgainzaion ID (o-xxx), We will use in the other step of installation.
 4. Prepare an email for create 2 new accounts
