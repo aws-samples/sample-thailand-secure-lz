@@ -38,11 +38,10 @@ Complete these validation checks before starting the deployment of the SLZ.
 8. All deny Service Control Policies (SCPs) and Resource Control Policies (RCPs) are detached from OUs. ( AWS Organizations > Policies)
 9. Prepare separate emails for log-archive and audit accounts that will be created when Control Tower is initiated.
 10. Disable existing AWS security services (Security Hub, Config, GuardDuty, Detective, Inspector) across all the regions. Remove delegated administration setting for each of the services.
-11. Disable existing AWS security services (Security Hub, Config, GuardDuty , Inspector) across all the regions. Remove delegated administration setting for each of the services.
-12. Enable opt-in Thailand (ap-southeast-7) Go to Account Settings by Click your account name (top right) → "Account" Or go directly to: https://console.aws.amazon.com/billing/home#/account. Find "AWS Regions" section. Locate "Asia Pacific (Bangkok) ap-southeast-7" Click "Enable" next to the region
-13. Check for suspended accounts in the Organization. These would not be enrolled to Control Tower, and will be isolated under Suspended OU.
-14. Create a new repository in GitHub, GitLab or BitBucket to store the Thailand SLZ configuration pulled from (AWS source repo).
-15. Create an S3 Bucket for CloudFormation Templates in the Thailand ap-southeast-7 region. 
+11. Enable opt-in Thailand (ap-southeast-7) Go to Account Settings by Click your account name (top right) → "Account" Or go directly to: https://console.aws.amazon.com/billing/home#/account. Find "AWS Regions" section. Locate "Asia Pacific (Bangkok) ap-southeast-7" Click "Enable" next to the region
+12. Check for suspended accounts in the Organization. These would not be enrolled to Control Tower, and will be isolated under Suspended OU.
+13. Create a new repository in GitHub, GitLab or BitBucket to store the Thailand SLZ configuration pulled from (AWS source repo).
+14. Create an S3 Bucket for CloudFormation Templates in the Thailand ap-southeast-7 region. 
     - Configure bucket settings:
         - Block all public access: Enabled (recommended)
         - Bucket versioning: Enabled (recommended)
