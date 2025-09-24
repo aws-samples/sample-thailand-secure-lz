@@ -30,7 +30,7 @@ The Secure Landing Zone (SLZ) provides Thai public sector organizations, Custome
 Complete these validation checks before starting the deployment of the SLZ. 
 1. Have your AWS management account ready. If not can create by this link https://aws.amazon.com/resources/create-account/
 2. Login with the user that has an Administrator access
-3. Create and AWS organization in management account. Go to AWS Organizaion , Click “Create an organization”. Write down the Orgainzaion ID (o-xxx), We will use in the other step of installation.
+3. Create and AWS organization in management account. Go to AWS Organizaion , Click “Create an organization”. Write down the Orgainzaion ID (o-xxx) Under Organization > Settings, We will use in the other step of installation.
 4. Prepare an email for create 2 new accounts
 5. From the AWS organization create a  new account name “Shared Service” . This account will use for backup administration, administration delegation and other common cloud operation actions. This account will be required during Control Tower Backup setup.
 6. Create a new account name “Central Backup”. This account will use for the central storage of backups. This account will be required during Control Tower Backup setup.
