@@ -178,11 +178,11 @@ Complete these validation checks before starting the deployment of the SLZ.
         - **S3BucketName**: Your S3 bucket name. Name of the bucket created in the pre-requisites where the cloudformation templates are uploaded.
         - **S3KeyPrefix**: Leave empty if templates are in the root of the bucket, or specify a prefix if templates are in a folder
         - **TargetOrganizationalUnitIds**: Comma-separated list of OU IDs to attach the policies to (e.g., `ou-abcd-1example,ou-efgh-2example`)
-        - **BaselineGuardrailPolicyName**: Name for the baseline guardrail policy (e.g., `my-slz-guardrail`)
+        - **BaselineGuardrailPolicyName**: Name for the baseline guardrail policy (e.g., `th-slz-guardrail`)
         - **BaselineGuardrailPolicyDescription**: Description for the baseline guardrail policy
-        - **ApprovedServicesPolicyName**: Name for the approved services policy (e.g., `my-slz-approved-services`)
+        - **ApprovedServicesPolicyName**: Name for the approved services policy (e.g., `th-slz-approved-services`)
         - **ApprovedServicesPolicyDescription**: Description for the approved services policy
-        - **BaselineResourceGuardrailPolicyName**: Name for the resource guardrail policy (e.g., `my-slz-resource-guardrail`)
+        - **BaselineResourceGuardrailPolicyName**: Name for the resource guardrail policy (e.g., `th-slz-resource-guardrail`)
         - **BaselineResourceGuardrailPolicyDescription**: Description for the resource guardrail policy
         - 
     When executed, this template creates three child stacks in sequence, maintaining the proper order of operations required for effective policy implementation across your AWS Organization.
