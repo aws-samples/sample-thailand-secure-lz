@@ -35,7 +35,7 @@ Complete these validation checks before starting the deployment of the SLZ.
 5. From the AWS organization create a  new account name “Shared Service” . This account will use for backup administration, administration delegation and other common cloud operation actions. This account will be required during Control Tower Backup setup.
 6. Create a new account name “Central Backup”. This account will use for the central storage of backups. This account will be required during Control Tower Backup setup.
 7. **AWS environment does not have any running workloads and services.**
-8. All deny Service Control Policies (SCPs) and Resource Control Policies (RCPs) are detached from OUs.
+8. All deny Service Control Policies (SCPs) and Resource Control Policies (RCPs) are detached from OUs. ( AWS Organizations > Policies)
 9. Prepare separate emails for log-archive and audit accounts that will be created when Control Tower is initiated.
 10. Disable existing AWS security services (Security Hub, Config, GuardDuty, Detective, Inspector) across all the regions. Remove delegated administration setting for each of the services.
 11. Disable existing AWS security services (Security Hub, Config, GuardDuty , Inspector) across all the regions. Remove delegated administration setting for each of the services.
