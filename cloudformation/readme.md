@@ -285,9 +285,8 @@ Login into central network account > VPC > Network Firewall> Network Firewall ru
 - Rule group type Stateful, 
 - Rule group format Suricata format 
 - Rule evaluation order Strict Order
-- Rule Name: Allow-Domains
-- Capacity 1000
 - Set Rule Name: "custom-suricata-rule-group"
+- Capacity 1000
 - Set Capacity to 10000
 - Set IP set variables
 	- "HOME_NET" to "10.25.0.0/16"
