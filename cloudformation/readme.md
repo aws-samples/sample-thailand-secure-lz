@@ -372,7 +372,7 @@ Login into central network account > VPC > Network Firewall> Network Firewall ru
 
 5. Enable IAM Access Analyzer in the **Audit** account. 
     - Deployment Account: delegated security audit account
-    - Deployment Region: Malaysia ap-southeast-7
+    - Deployment Region: Thailand ap-southeast-7
     - CloudFormation script: "lz-audit-access-analyzer.json"
     - StackName: "lz-audit-access-analyzer"
     - Parameter: 
