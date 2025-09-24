@@ -122,7 +122,7 @@ Complete these validation checks before starting the deployment of the SLZ.
     - StackName: "lz-organization-setup"
     - NOTE: Do not change the stack-name to avoid conflict with following deployment steps.
 	- Parameters:
-		- S3BucketName : bucket that create form step 15 in the prerequisites section
+		- S3BucketName : bucket that create form step 14 in the prerequisites section
   		- OrganizationRootId : r-xxx from organiztion root ID in Deployment setp 1
    		- KeyAdministratorArn : role that permited IAM Admin Role
     	- OrganizationId: organizaion ID from step 3 in prerequisites  
