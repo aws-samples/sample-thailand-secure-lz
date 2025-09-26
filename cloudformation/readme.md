@@ -1,6 +1,6 @@
 # Thailand Secure Landing Zone - Deployment Workbook
 
-The Secure Landing Zone (SLZ) provides Thai public sector organizations, Customer and Partners with a pre-configured AWS multi-account framework featuring automated security controls. Built on infrastructure as code (IaC), the SLZ incorporates "Secure by Default" guardrails that align with National Cyber Security Agency (NCSA) requirements. This solution streamlines the cloud adoption process by offering ready-to-deploy security configurations, allowing government agencies to establish a compliant AWS environment quickly and efficiently.
+The Secure Landing Zone (SLZ) is Landing Zone with enhanced security features provides Thai public sector organizations, Customer and Partners with a pre-configured AWS multi-account framework featuring automated security controls. Built on infrastructure as code (IaC), the SLZ incorporates "Secure by Default" guardrails that align with National Cyber Security Agency (NCSA) requirements. This solution streamlines the cloud adoption process by offering ready-to-deploy security configurations, allowing government agencies to establish a compliant AWS environment quickly and efficiently.
 
 ![Thailand Landing Zone Architecture](/cloudformation/image/lza.drawio.png)
 
@@ -16,9 +16,9 @@ The Secure Landing Zone (SLZ) provides Thai public sector organizations, Custome
 | Data Protection | S3 Block Public Access, enforce TLS for S3 | 5.1.1, 5.1.3.3, 5.1.2 | lz-organization-rcp-guardrails.json |
 | Network Security | VPC, Transit Gateway | 5.2.3.6 | lz-central-network.json, lz-account-vpc-template.yaml |
 | Network Security | AWS Network Firewall with IPS (as Suricata rules) | 5.2.7.2 | lz-central-network.json |
-| Network Security | Centralized VPC interface endpoints (S3, DynamoDB, KMS, CloudWatch Log, Secrets Manager, EC2, SSM, SSM-Messages, ECR, GuardDuty)  | 5.2.3, 5.2.7.2 | lz-central-network.json |
-| Security Assurance | Security Hub | 5.2.6.6, 5.2.10.1 | Manual Configuration |
-| Logging and Monitoring | Organization CloudTrail (multi-region, management events), as part of Control Tower | 5.2.6.4, 5.2.6.5 | Manual Configuration | 
+| Network Security | Centralized VPC interface endpoints (Amazon S3, DynamoDB, KMS, Amazon CloudWatch Log, Secrets Manager, EC2, SSM, SSM-Messages, ECR, Amazon GuardDuty)  | 5.2.3, 5.2.7.2 | lz-central-network.json |
+| Security Assurance | AWS Security Hub | 5.2.6.6, 5.2.10.1 | Manual Configuration |
+| Logging and Monitoring | Organization AWS CloudTrail (multi-region, management events), as part of Control Tower | 5.2.6.4, 5.2.6.5 | Manual Configuration | 
 | Logging and Monitoring | SSM Session Manager | 5.2.6.4 | lz-account-baseline.yaml |
 | Logging and Monitoring | S3 Access Logs | 5.2.6.5, 5.2.6.6 | PENDING |  
 | Threat Detection | Amazon GuardDuty | 5.2.6.6 | lz-audit-guardduty.yaml, lz-audit-guardduty-notifications.yaml |
@@ -37,17 +37,17 @@ Complete these validation checks before starting the deployment of the SLZ.
 7. **AWS environment does not have any running workloads and services.**
 8. All deny Service Control Policies (SCPs) and Resource Control Policies (RCPs) are detached from OUs. ( AWS Organizations > Policies)
 9. Prepare separate emails for log-archive and audit accounts that will be created when Control Tower is initiated.
-10. Disable existing AWS security services (Security Hub, Config, GuardDuty, Detective, Inspector) across all the regions. Remove delegated administration setting for each of the services.
+10. Disable existing AWS security services (AWS Security Hub, Config, Amazon GuardDuty, Detective, Amazon Inspector) across all the regions. Remove delegated administration setting for each of the services.
 11. Enable opt-in Thailand (ap-southeast-7) Go to Account Settings by Click your account name (top right) → "Account" Or go directly to: https://console.aws.amazon.com/billing/home#/account. Find "AWS Regions" section. Locate "Asia Pacific (Bangkok) ap-southeast-7" Click "Enable" next to the region
 12. Check for suspended accounts in the Organization. These would not be enrolled to Control Tower, and will be isolated under Suspended OU.
 13. Create a new repository in GitHub, GitLab or BitBucket to store the Thailand SLZ configuration pulled from (AWS source repo).
-14. Create an S3 Bucket for CloudFormation Templates in the Thailand ap-southeast-7 region. 
+14. Create an Amazon S3 Bucket for CloudFormation Templates in the Thailand ap-southeast-7 region. 
     - Configure bucket settings:
         - Block all public access: Enabled (recommended)
         - Bucket versioning: Enabled (recommended)
         - Default encryption: Enabled (recommended)
         - Lifecycle configuration rules: Not required for CloudFormation templates.
-    - Upload the below cloudformation templates into the S3 bucket. You can upload the files to the root of the bucket, or specify a prefix if templates are to be in a folder.
+    - Upload the below cloudformation templates into the Amazon S3 bucket. You can upload the files to the root of the bucket, or specify a prefix if templates are to be in a folder.
         - lz-organization.json
         - lz-stackset-roles.yaml
         - lz-organization-kms-iam.json
@@ -60,7 +60,7 @@ Complete these validation checks before starting the deployment of the SLZ.
 
 ## Installation Steps
 1. *HOME-REGION* is Thailand (ap-southeast-7).
-2. Create KMS Customer Managed Key (Symmetric, for Encrypt and Decrypt, single-region), KMS-CMK, for AWS Control Tower. This will be referenced during the setup of the Control Tower service in Step 3.
+2. Create AWS KMS Customer Managed Key / CMK (Symmetric, for Encrypt and Decrypt, single-region) for AWS Control Tower. This will be referenced during the setup of the Control Tower service in Step 3.
     - Region: Thailand ap-southeast-7
     - Key Type: Symmetric Key
     - Key Usage: Encrypt and Decrypt.
@@ -115,7 +115,7 @@ Complete these validation checks before starting the deployment of the SLZ.
 
 ## Deployment Steps
 1. Write down AWS root Organization identifer (format r-XXXX) from the AWS Organization console of the management account. This is an input parameter to the CloudFormation script "lz-organization-setup.yaml".
-2. Use the cloudformation template to create the required Organization Units (OU) - Infrastructure, Workloads, Production, NonProduction, Forensic, KMS-CMK Keys for CloudWatch Log Groups, Control Tower Backup and required IAM roles for Backup and SSM and AWS Organization Trusted Access for selected services (GuardDuty, Security Hub, Inspector, Firewall Manager, IAM Access Analyzer, IAM, CloudFormation, Backup)
+2. Use the cloudformation template to create the required Organization Units (OU) - Infrastructure, Workloads, Production, NonProduction, Forensic, KMS-CMK Keys for CloudWatch Log Groups, Control Tower Backup and required IAM roles for Backup and SSM and AWS Organization Trusted Access for selected services (Amazon GuardDuty, Security Hub, Inspector, Firewall Manager, IAM Access Analyzer, IAM, CloudFormation, Backup)
     - Deployment Account: management account
     - Deployment Region: Thailad ap-southeast-7
     - CloudFormation script: "lz-organization-setup.yaml"
@@ -147,7 +147,7 @@ Complete these validation checks before starting the deployment of the SLZ.
     - Specify the KMS key id (alias "control-tower-key") for Control Tower encryption 
     - Enable AWS Backup for whole of organization. Specify the new Shared Services (for backup administration) and central backup accounts. These accounts should not be enrolled under AWS Control Tower at the start.
         - Specify the KMS key id for Control Tower Backup encryption (alias "control-tower-backup-key")
-6. Create **CloudFormation StackSet** to configure delegation of security administration for AWS Security Services GuardDuty, Security Hub, Inspector, IAM Access Analyzer. 
+6. Create **CloudFormation StackSet** to configure delegation of security administration for AWS Security Services Amazon GuardDuty, AWS Security Hub, Amazon Inspector, IAM Access Analyzer. 
     - Deployment Account: management account
     - Deployment Region: ap-southeast-7
     - Create new **CloudFormation StackSet**
@@ -175,7 +175,7 @@ Complete these validation checks before starting the deployment of the SLZ.
     - CloudFormation script: "lz-organization-guardrails.yaml"
     - StackName: "lz-organization-guardrails"
     Specify the parameters:
-        - **S3BucketName**: Your S3 bucket name. Name of the bucket created in the pre-requisites where the cloudformation templates are uploaded.
+        - **S3BucketName**: Your Amazon S3 bucket name. Name of the bucket created in the pre-requisites where the cloudformation templates are uploaded.
         - **S3KeyPrefix**: Leave empty if templates are in the root of the bucket, or specify a prefix if templates are in a folder
         - **TargetOrganizationalUnitIds**: Comma-separated list of OU IDs to attach the policies to (e.g., `ou-abcd-1example,ou-efgh-2example`)
         - **BaselineGuardrailPolicyName**: Name for the baseline guardrail policy (e.g., `th-slz-guardrail`)
@@ -328,25 +328,25 @@ Login into central network account > VPC > Network Firewall> Network Firewall ru
 ## Configure AWS Security Services
 1. Login to the **Audit** account which is delegated security administration for the Control Tower landing zone.
 
-2. With cloud formation, enable **GuardDuty** with auto-enable for organization and enable these protection plans (a. S3 Protection, b. Runtime Monitoring, c. Lambda Network Activity Monitoring, d. Malware Protection for EC2, e. RDS Login Activity Monitoring) for all the member accounts.
+2. With cloud formation, enable **Amazon GuardDuty** with auto-enable for organization and enable these protection plans (a. S3 Protection, b. Runtime Monitoring, c. Lambda Network Activity Monitoring, d. Malware Protection for EC2, e. RDS Login Activity Monitoring) for all the member accounts.
     - Deployment Account: delegated security audit account
     - Deployment Region: Thailand ap-southeast-7, us-east-1, ap-southeast-1
     - CloudFormation script: "lz-audit-guardduty.yaml"
     - StackName: "lz-audit-guardduty"
-    - Obtain the GuardDuty DetectorId from "GuardDuty" --> "Settings" for each region.
-    - Add all the member accounts to the GuardDuty Protection Plan for each region. 
+    - Obtain the Amazon GuardDuty DetectorId from "GuardDuty" --> "Settings" for each region.
+    - Add all the member accounts to the Amazon GuardDuty Protection Plan for each region. 
         - Action: Go to "GuardDuty" --> "Accounts" in delegated administration account for security. Select "Add Member" under "Actions".
     - Retain scanned snapshots when malware is detected for each region. 
         - Action: Go to "GuardDuty" --> "Malware Protection for EC2" --> "General Settings", and enable "Retain scanned snapshots when malware is detected."
 
-3. Enable **Security Hub** in Audit account for all the governed regions. Create a new Security Hub Central Configuration Policy in **"us-east-1"** that enabled "AWS Foundation Security Standards" across the governed regions (us-east-1, and ap-southeast-7 and ap-sooutheast-1). 
+3. Enable **AWS Security Hub** in Audit account for all the governed regions. Create a new AWS Security Hub Central Configuration Policy in **"us-east-1"** that enabled "AWS Foundation Security Standards" across the governed regions (us-east-1, and ap-southeast-7 and ap-sooutheast-1). 
     - Security Hub --> Settings --> Regions
         - Enable Cross-Region aggregation.
     - Choose Home Region: us-east-1
     - Choose Linked Regions: ap-southeast-7 and ap-southeast-1
     - Select "Configuration type" as "Customize my Security Hub Configuration". 
-    - Select "Custom policy" to "Enable Security Hub CSPM", with "AWS Foundational Security Best Practices v1.0.0" selected as the security standard. 
-    - Select "Disable specific control", to remove Security Hub findings that are no longer required. (Security Hub --> Controls)
+    - Select "Custom policy" to "Enable AWS Security Hub CSPM", with "AWS Foundational Security Best Practices v1.0.0" selected as the security standard. 
+    - Select "Disable specific control", to remove AWS Security Hub findings that are no longer required. (Security Hub --> Controls)
         - [IAM.6] Hardware MFA should be enabled for the root user
         - [ELB.2] Classic Load Balancers with SSL/HTTPS listeners should use a certificate provided by AWS Certificate Manager
         - [ELB.3] Classic Load Balancer listeners should be configured with HTTPS or TLS termination
@@ -362,7 +362,7 @@ Login into central network account > VPC > Network Firewall> Network Firewall ru
     - Confirm the configuration settings and select "Create policy and apply".
     - BUG: CloudFormation service in Thailand region does not recognize AWS::SecurityHub::ConfigurationPolicy CloudFormation Resources; Aggregator finding is not yet available. WORKAROUND: The above central configuration has to be done manually.
 
-4. In the **Audit** account, create an Event Pattern to send an automated email alert on CRITICAL or HIGH severity findings from Security Hub and GuardDuty products. Identify an email to subscribe to the SNS notification.
+4. In the **Audit** account, create an Event Pattern to send an automated email alert on CRITICAL or HIGH severity findings from AWS Security Hub and GuardDuty products. Identify an email to subscribe to the SNS notification.
 - Deployment Account: delegated security audit account
 - Deployment Region: ap-southeast-7
 - CloudFormation script: "lz-audit-guardduty-notifications.yaml"
@@ -380,7 +380,7 @@ Login into central network account > VPC > Network Firewall> Network Firewall ru
 
 6. In the **Audit** account, activate Amazon Inspector for required member accounts, specifically workload accounts in ap-southeast-7 region.
     - Amazon Inspector -> Account Management - Accounts(Tab)
-    - Toggle ON Automatically activate Inspector for new member accounts
+    - Toggle ON Automatically activate Amazon Inspector for new member accounts
     - In Organization section, select the accounts with workloads, click on Activate --> All Scanning
 
 ## Configure AWS Systems Manager (SSM) for EC2 inventory management
@@ -391,7 +391,7 @@ The following SSM features are automatically enabled:
 - **Session Manager Preferences**: 
   - Idle timeout: 20 minutes (configurable)
   - Maximum session duration: 60 minutes (configurable)
-  - Session logging to CloudWatch Logs with encryption
+  - Session logging to Amazon CloudWatch Logs with encryption
   - Log retention: 90 days
 
 
@@ -409,23 +409,23 @@ An Organization CloudTrail for S3 Data events is used to monitor and log access 
 - Select Enable for my organization to apply the trail to all accounts.
 - Choose the existing S3 bucket used to collect CloudTrail logs
 - Configure KMS encryption for security.
-- Configure CloudWatch Logs if monitoring is required.
+- Configure Amazon CloudWatch Logs if monitoring is required.
 - Under Event type, check Data events. Switch to Basic event selector
 - Click S3 and choose either to trail for all bucket or specific S3 buckets.
 - Review and Click Create trail.
 
 ## Troubleshooting
-1. CloudFormation deployment issues
+1. AWS CloudFormation deployment issues
 - Go to AWS CloudFormation console, and select the Stack that has identified issues.
 - Review the "Events" tab, and click on "View root cause" to identify the specific action that caused the failed deployment.
 - Review the Lambda function's CloudWatch log group events to determine what may have caused the issues. Go to "Resources" tab and select the LambdaLogGroup to review the log stream events and to identify the potential root causes.
 
-2. CloudFormation rollback failure
+2. AWS CloudFormation rollback failure
 - Go to AWS CloudFormation console and select the Stack with the identified issues. 
 - Force delete the StackSet and check the box to delete resources.
-- Go to resources and check that all the previously created resources (e.g. IAM Role, Lamdba Function, CloudWatch Log Group) are moved. Click on each remaining resource, and delete the remaining resource manually. 
+- Go to resources and check that all the previously created resources (e.g. IAM Role, Lamdba Function, Amazon CloudWatch Log Group) are moved. Click on each remaining resource, and delete the remaining resource manually. 
 
-3. CloudFormation StackSet deployment failures
+3. AWS CloudFormation StackSet deployment failures
 - After rolling back (deleting) a StackSet, there may be some remaining CloudWatch Log Groups that were not removed. Go to the affected account and region to delete remaining CloudWatch Log Groups built by the StackSet before attempting to re-run the StackSet.
 
 4. Control Tower Backup enrollment failure
