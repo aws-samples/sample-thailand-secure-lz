@@ -6,31 +6,31 @@ The Secure Landing Zone (SLZ) provides a secure cloud foundation for Thai govern
 
 
 ## Feature Components
-1. Management: AWS Organization and Control Tower
-    - Service Control Policy: region deny, enforce data encryption for data resources, and restrict access to approved AWS services.
+1. Management: AWS Organizations and Control Tower
+    - Service Control Policy: region deny, enforce data encryption for data resources, and restrict access to The approved AWS services.
     - Resource Policy: enforce TLS connections, prevent cross deputy
     - (optional) Control Tower Proactive controls can be configured by the customer
 2. Logging: Control Tower using log-archive account
     - Organization CloudTrail
-    - S3 Access Logs
+    - Amazon S3 Access Logs
     - SSM Session Logs
     - BACKLOG: WAF Logs
     - BACKLOG: VPC Flow Logs
-3. Security: Control Tower using audit account as the delegated security admin for GuardDuty, and Security Hub
-    - Threat Detection: GuardDuty
-    - Compliance Monitoring: Security Hub and Config
+3. Security: Control Tower using audit account as the delegated security admin for Amazon GuardDuty, and AWS Security Hub
+    - Threat Detection: Amazon GuardDuty
+    - Compliance Monitoring: AWS Security Hub and Config
     - Security Alert Notification: SNS Topic
-    - Vulnerability Patch Management: Inspector, with SSM Patch Manager Security Baseline
-    - Firewall Manager: centralized network configuration management for security groups, and WAF by policy enforcement
-    - BACKLOG: Detective (pending availability in region)
-4. IAM: Control Tower IAM Identity Center with identity federation to organization's Identity Provider (IdP). 
+    - Vulnerability Patch Management: Amazon Inspector, with SSM Patch Manager Security Baseline
+    - AWS Firewall Manager: centralized network configuration management for security groups, and WAF by policy enforcement
+    - BACKLOG: Amazon Detective (pending availability in region)
+4. IAM: Control Towwer AWS IAM Identity Center with identity federation to organization's Identity Provider (IdP). 
     - IAM Access Analyzer with Zone of Trust to "Organization" 
     - Organization Central Root management
-5. Network: central network account, with ANFW and Route53 DNS Firewall, TGW and centralized VPC endpoints
+5. Network: central network account, with ANFW and Amazon Route 53 DNS Firewall, TGW and centralized VPC endpoints
     - VPC created subnets (app-private, db-private, public) across 3 availability zones.
-    - Use VPC interface endpoints for privatelink access to AWS services (S3, SSM, SSMMessages, EC2, Log, KMS, Secrets Manager, ECR)
+    - Use VPC interface endpoints for privatelink access to AWS services (Amazon S3, SSM, SSMMessages,Amazon EC2 , Log, KMS, Secrets Manager, Amazon ECR)
     - (optional) Customers can choose to deploy either AWS Network Firewall or their preferred network firewall e.g. Palo Alto or Fortinet as virtual appliances running as EC2 instances.
-    - BACKLOG: Firewall Manager Policies
+    - BACKLOG: AWS Firewall Manager Policies
     - BACKLOG: WAF: Baseline WAF configuration to attach to publicly accessible resources.
 6. Data Protection:
     - KMS Customer Managed Keys (KMS-CMK) 
@@ -40,14 +40,14 @@ The Secure Landing Zone (SLZ) provides a secure cloud foundation for Thai govern
     - Backup policies (daily, weekly) configured and member accounts have local backup vaults. 
     - Backup policies move snapshots up to central backup vault at a later stage.
 8. Block Public Access at account level: 
-    - Declarative Policies for EC2 - IMDSv2, AMI, Snapshots, 
-    - S3
+    - Declarative Policies for Amazon EC2 - IMDSv2, AMI, Snapshots, 
+    - Amazon S3
     - BACKLOG: VPC BPA
 9. Compute Management:
-    - EC2: Default Host Configuration Management, EBS Default encryption with KMS-CMK, with SSM Quick Starts for Host Management and Resource Explorer
+    - Amazon EC2: Default Host Configuration Management, EBS Default encryption with KMS-CMK, with SSM Quick Starts for Host Management and Resource Explorer
     - Containers: ECR has Inspector Enhanced Scanning 
-    - Lambda: None
-    - Aurora, RDS, EFS: enforce data-at-rest encryption with KMS-CMK
+    - AWS Lambda: None
+    - Amazon Aurora, Amazon RDS, Amazon EFS: enforce data-at-rest encryption with KMS-CMK
 10. Forensics: OU
 
 ## Pricing Estimate
