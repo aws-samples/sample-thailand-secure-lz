@@ -4,7 +4,7 @@ The Secure Landing Zone (SLZ) is Landing Zone with enhanced security features pr
 
 ![Thailand Landing Zone Architecture](/cloudformation/image/lza.drawio.png)
 
-## Technical requirements mapping to NCSA Cybersecurity Standrds for Cloud System
+## Technical requirements mapping to NCSA Cybersecurity Standards for Cloud Systems
 
 |Security Domain|Control Implementation|NCSA Control Reference|SLZ Configuration|
 | --- | --- | --- | --- |
