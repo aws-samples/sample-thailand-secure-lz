@@ -217,7 +217,7 @@ Complete these validation checks before starting the deployment of the SLZ.
     - Go to IAM Access Analyzer --> Create Access Analzyer 
         - AnalyzerType: External access
 
-13. Configure IAM Identity Center (IDC). IDC is used for all of the organization users to access the AWS environment for a single-sign-on experience.
+13. Configure IAM Identity Center (IDC). IDC is used for all of the organization users to access the AWS environment for a single-sign-on experience. ** Need to modify the "lz-iam-idc-permissionsets.json" to adjust the role that limit only require action for each user This file is just for the example **
     - Configure one of the accounts e.g. Shared Services account as the delegated administrator for IAM IDC.
       	- Access IAM Identity Center in Management Account
       	- Go to AWS Console → IAM Identity Center
