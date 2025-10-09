@@ -21,13 +21,12 @@
                     "arn:aws:iam::aws:policy/ReadOnlyAccess",
                     "arn:aws:iam::aws:policy/AmazonQDeveloperAccess",
                     "arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess",
-                    "arn:aws:iam::aws:policy/AmazonEC2FullAccess",
-                    "arn:aws:iam::aws:policy/AmazonS3FullAccess",
-                    "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess",
-                    "arn:aws:iam::aws:policy/AWSLambda_FullAccess",
-                    "arn:aws:iam::aws:policy/AmazonRDSFullAccess",
-                    "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess",
-                    "arn:aws:iam::aws:policy/AmazonCloudWatchEvidentlyFullAccess"
+                    "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AWSLambda_ReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AmazonRDSReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AmazonCloudWatchEvidentlyReadOnlyAccess"
                 ],
                 "SessionDuration": "PT6H",
                 "Tags": [
@@ -76,12 +75,10 @@
                 "Description": "Security Access Permission Set for SLZ",
                 "ManagedPolicies": [
                     "arn:aws:iam::aws:policy/ReadOnlyAccess",
-                    "arn:aws:iam::aws:policy/AWSSecurityHubFullAccess",
-                    "arn:aws:iam::aws:policy/AmazonGuardDutyFullAccess",
-                    "arn:aws:iam::aws:policy/AmazonDetectiveFullAccess",
-                    "arn:aws:iam::aws:policy/AmazonInspector2FullAccess",
-                    "arn:aws:iam::aws:policy/AWSWAFConsoleFullAccess",
-                    "arn:aws:iam::aws:policy/AmazonAthenaFullAccess"
+                    "arn:aws:iam::aws:policy/AWSSecurityHubReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AmazonGuardDutyReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AmazonInspector2ReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AWSWAFConsoleReadOnlyAccess",
                 ],
                 "SessionDuration": "PT2H",
                 "Tags": [
