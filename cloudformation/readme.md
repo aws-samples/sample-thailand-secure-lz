@@ -252,7 +252,7 @@ Complete these validation checks before starting the deployment of the SLZ.
         - Deployment Region: Thailand ap-southeast-7
         - CloudFormation script: "lz-central-network.json"
         - StackName: "lz-central-network"
-    - Note: Review the required "Network Access Control List" and "Firewall Policy" for Stateful to identify the rules to be set. Configuration of the Firewall Policies should be implemented using a separate CloudFormation script from the "lz-central-network.json".
+    - Note: Review the required "Network Access Control List" and "Firewall Policy" for Stateful to identify the rules to be set. Configuration of the Firewall Policies should be implemented using a separate CloudFormation script from the "lz-central-network.json". The security ploycy of the enpoint need to modify for restrited access form VPC.
 
 15. Delegate Firewall Manager security administration for centralized network management using policies and IPAM Manager. 
     - Deployment Account: management account
