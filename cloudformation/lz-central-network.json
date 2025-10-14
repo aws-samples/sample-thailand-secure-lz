@@ -1,6 +1,31 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
     "Description": "In centralized network account, these resources are created: 2 VPCs with managed NAT, inspection VPC for firewall, and a separate network-endpoints VPC. Transit Gateway is created and shared using Resource Access Manager (RAM). Routes to Firewall Endpoints need to be manually specified.",
+    "Metadata": {
+        "VPCEndpointPolicy": {
+            "Description": "Policy allowing VPC traffic to S3 and DynamoDB endpoints",
+            "PolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Sid": "AllowS3Access",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": "s3:*",
+                        "Resource": "*"
+                    },
+                    {
+                        "Sid": "AllowDynamoDBAccess",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": "dynamodb:*",
+                        "Resource": "*"
+                    }
+                ]
+            },
+            "Note": "This is an example policy. Replace principals, resources, and actions with actual values for production use."
+        }
+    },
     "Parameters": {
         "NetworkInspectionVPCName": {
             "Description": "Name of the firewall inspection VPC.",
