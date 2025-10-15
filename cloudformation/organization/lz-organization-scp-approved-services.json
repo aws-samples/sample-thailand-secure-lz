@@ -4,7 +4,7 @@
     "Parameters": {
         "ApprovedServicesPolicyName": {
             "Type": "String",
-            "Default": "my-slz-approved-services",
+            "Default": "th-slz-approved-services",
             "Description": "Name of the approved services Service Control Policy"
         },
         "PolicyDescription": {
