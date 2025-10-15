@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  Malaysia SLZ - Nested Stack for Organization Setup
+  Thailand SLZ - Nested Stack for Organization Setup
   This template creates a nested stack that deploys organization structure, KMS keys, IAM roles, and service access in the correct order.
 
 Metadata:
