@@ -4,7 +4,7 @@
     "Parameters": {
         "BaselineGuardrailPolicyName": {
             "Type": "String",
-            "Default": "my-slz-guardrail",
+            "Default": "th-slz-guardrail",
             "Description": "Name of the baseline guardrail Service Control Policy"
         },
         "PolicyDescription": {
