@@ -4,7 +4,7 @@
     "Parameters": {
         "BaselineResourceGuardrailPolicyName": {
             "Type": "String",
-            "Default": "my-lza-resource-guardrail",
+            "Default": "th-lza-resource-guardrail",
             "Description": "Name of the baseline guardrail Resource Control Policy"
         },
         "PolicyDescription": {
