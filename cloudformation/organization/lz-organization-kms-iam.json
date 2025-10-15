@@ -1,0 +1,332 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates KMS keys for Control Tower Backup and CloudWatch Log Groups. Exception: Control Tower Backup requires KMS-CMK to be multi-region.",
+    "Parameters": {
+        "KeyAdministratorArn": {
+            "Type": "String",
+            "Description": "ARN of IAM user/role that will administer the KMS keys"
+        },
+        "OrganizationId": {
+            "Type": "String",
+            "Default": "o-",
+            "Description": "Your AWS Organization ID (starts with O-)"
+        },
+        "ControlTowerBackupKeyAliasName": {
+            "Type": "String",
+            "Default": "alias/control-tower-backup-key",
+            "Description": "Alias name for the Control Tower Backup KMS key"
+        },
+        "EC2SSMRoleName": {
+            "Type": "String",
+            "Default": "EC2SSMCloudWatchRole",
+            "Description": "Name of the IAM role for EC2 instances"
+        }
+    },
+    "Mappings": {
+        "Constants": {
+            "KMSAlias": {
+                "Name": "alias/cloudwatch-logs-key"
+            }
+        }
+    },
+    "Resources": {
+        "EC2SSMServiceRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Ref": "EC2SSMRoleName"
+                },
+                "Description": "IAM role for EC2 instances with SSM and CloudWatch Agent permissions",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "ec2.amazonaws.com"
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+                    "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+                ],
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "SSM and CloudWatch Agent Access"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "CloudWatchLogsKey": {
+            "Type": "AWS::KMS::Key",
+            "Properties": {
+                "Description": "KMS key for CloudWatch Logs encryption",
+                "EnableKeyRotation": true,
+                "KeyPolicy": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "Enable IAM User Permissions",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:root"
+                                }
+                            },
+                            "Action": "kms:*",
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "Allow Key Administrator",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Ref": "KeyAdministratorArn"
+                                }
+                            },
+                            "Action": [
+                                "kms:Create*",
+                                "kms:Describe*",
+                                "kms:Enable*",
+                                "kms:List*",
+                                "kms:Put*",
+                                "kms:Update*",
+                                "kms:Revoke*",
+                                "kms:Disable*",
+                                "kms:Get*",
+                                "kms:Delete*",
+                                "kms:TagResource",
+                                "kms:UntagResource",
+                                "kms:ScheduleKeyDeletion",
+                                "kms:CancelKeyDeletion"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "Allow CloudWatch Logs Service",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": {
+                                    "Fn::Sub": "logs.${AWS::Region}.amazonaws.com"
+                                }
+                            },
+                            "Action": [
+                                "kms:Encrypt*",
+                                "kms:Decrypt*",
+                                "kms:ReEncrypt*",
+                                "kms:GenerateDataKey*",
+                                "kms:Describe*"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "ArnLike": {
+                                    "kms:EncryptionContext:aws:logs:arn": {
+                                        "Fn::Sub": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "CloudWatch Logs Encryption"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "CloudWatchLogsKeyAlias": {
+            "Type": "AWS::KMS::Alias",
+            "Properties": {
+                "AliasName": {
+                    "Fn::FindInMap": [
+                        "Constants",
+                        "KMSAlias",
+                        "Name"
+                    ]
+                },
+                "TargetKeyId": {
+                    "Ref": "CloudWatchLogsKey"
+                }
+            }
+        },
+        "ControlTowerBackupKey": {
+            "Type": "AWS::KMS::Key",
+            "Properties": {
+                "Description": "KMS key for Control Tower Backup encryption",
+                "EnableKeyRotation": true,
+                "MultiRegion": true,
+                "KeyPolicy": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "Enable IAM User Permissions",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:root"
+                                }
+                            },
+                            "Action": "kms:*",
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "Allow Key Administrator",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Ref": "KeyAdministratorArn"
+                                }
+                            },
+                            "Action": [
+                                "kms:Create*",
+                                "kms:Describe*",
+                                "kms:Enable*",
+                                "kms:List*",
+                                "kms:Put*",
+                                "kms:Update*",
+                                "kms:Revoke*",
+                                "kms:Disable*",
+                                "kms:Get*",
+                                "kms:Delete*",
+                                "kms:TagResource",
+                                "kms:UntagResource",
+                                "kms:ScheduleKeyDeletion",
+                                "kms:CancelKeyDeletion"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "Allow use of the KMS key for organization",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": "*"
+                            },
+                            "Action": [
+                                "kms:Encrypt*",
+                                "kms:ReEncrypt*",
+                                "kms:Decrypt*",
+                                "kms:DescribeKey",
+                                "kms:GetKeyPolicy",
+                                "kms:CreateGrant",
+                                "kms:ListGrants",
+                                "kms:RevokeGrant",
+                                "kms:GenerateDataKey*",
+                                "kms:Describe*"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "StringEquals": {
+                                    "aws:PrincipalOrgID": {
+                                        "Ref": "OrganizationId"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "Control Tower Backup Encryption"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "ControlTowerBackupKeyAlias": {
+            "Type": "AWS::KMS::Alias",
+            "Properties": {
+                "AliasName": {
+                    "Ref": "ControlTowerBackupKeyAliasName"
+                },
+                "TargetKeyId": {
+                    "Ref": "ControlTowerBackupKey"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "CloudWatchLogsKeyId": {
+            "Description": "ID of the CloudWatch Logs KMS key",
+            "Value": {
+                "Ref": "CloudWatchLogsKey"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-CloudWatchLogsKeyId"
+                }
+            }
+        },
+        "CloudWatchLogsKeyArn": {
+            "Description": "ARN of the CloudWatch Logs KMS key",
+            "Value": {
+                "Fn::GetAtt": [
+                    "CloudWatchLogsKey",
+                    "Arn"
+                ]
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-CloudWatchLogsKeyArn"
+                }
+            }
+        },
+        "ControlTowerBackupKeyId": {
+            "Description": "ID of the Control Tower Backup KMS key",
+            "Value": {
+                "Ref": "ControlTowerBackupKey"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-ControlTowerBackupKeyId"
+                }
+            }
+        },
+        "ControlTowerBackupKeyArn": {
+            "Description": "ARN of the Control Tower Backup KMS key",
+            "Value": {
+                "Fn::GetAtt": [
+                    "ControlTowerBackupKey",
+                    "Arn"
+                ]
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-ControlTowerBackupKeyArn"
+                }
+            }
+        },
+        "EC2SSMRoleArn": {
+            "Description": "ARN of the created IAM role",
+            "Value": {
+                "Fn::GetAtt": [
+                    "EC2SSMServiceRole",
+                    "Arn"
+                ]
+            }
+        },
+        "EC2SSMRoleName": {
+            "Description": "Name of the created IAM role",
+            "Value": {
+                "Ref": "EC2SSMRoleName"
+            }
+        }
+    }
+}
