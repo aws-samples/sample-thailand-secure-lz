@@ -127,13 +127,13 @@ Complete these validation checks before starting the deployment of the SLZ.
    		- KeyAdministratorArn : role that permited IAM Admin Role
     	- OrganizationId: organizaion ID from step 3 in prerequisites  
 		
-3. Because we can not use key accross other region. For the Control Tower Backup key, ensure to create a new replica key in us-east-1 and any other additional governed region. Go to KMS console, select the "control-tower-backup-key", go to "Regionality" and "Create new replica keys" for us-east-1.
+3. Control Tower Back KMS-CMK Key requires multi-region implementation for the Backup Vaults. For the Control Tower Backup key, ensure to create a new replica key in us-east-1 and any other additional governed region. Go to KMS console, select the "control-tower-backup-key", go to "Regionality" and "Create new replica keys" for us-east-1.
 4. Enable AWS Organization Central Root Management. Go to IAM console, select "Account settings", and go to the section "Centralized root access for member accounts", and select "Enable". 
     - Enable these capabilities
     	- 1) Root credentials management,
       	- 2) Privileged root actions in member accounts.
     - Assign delegate administrator account to "Shared Services" account.
-5. Enable Control Tower in management account in Thailand ap-southeast-7 region. Follow these instructions from [AWS Control Tower quick start guide](https://docs.aws.amazon.com/controltower/latest/userguide/quick-start.html)
+5. Enable Control Tower in management account in Thailand ap-southeast-7 region. Follow these instructions from [AWS Control Tower quick start guide](https://docs.aws.amazon.com/controltower/latest/userguide/quick-start.html) Note that You may exclude ap-southeast-1 (Singapore) from the governed region selection if you do not have any workloads running in that region.
     - Deployment Account: management account
     - Deployment Region: Thailand ap-southeast-7
     - Additional region for governance (for global services such as IAM, CloudFront, Route53): us-east-1, ap-southeast-1
@@ -217,7 +217,7 @@ Complete these validation checks before starting the deployment of the SLZ.
     - Go to IAM Access Analyzer --> Create Access Analzyer 
         - AnalyzerType: External access
 
-13. Configure IAM Identity Center (IDC). IDC is used for all of the organization users to access the AWS environment for a single-sign-on experience. **Need to modify the "lz-iam-idc-permissionsets.json" to adjust the role that limit only require action for each user This file is just for the example**
+13. Configure IAM Identity Center (IDC). IDC is used for all of the organization users to access the AWS environment for a single-sign-on experience. **You can define more granular IAM permissions for each role by adjusting the policy definition in  "lz-iam-idc-permissionsets.json**
     - Configure one of the accounts e.g. Shared Services account as the delegated administrator for IAM IDC.
       	- Access IAM Identity Center in Management Account
       	- Go to AWS Console → IAM Identity Center
@@ -227,7 +227,7 @@ Complete these validation checks before starting the deployment of the SLZ.
       	- Under "Delegated administration", click "Register account"
       	- Select the Shared Services account (or your chosen account)
       	- Click "Register account"
-    - Use coludformation to configure these required IAM Permission Sets.
+    - Deploy CloudFormation stack to configure these required IAM Permission Sets.
         - Deployment Account: management account
         - Deployment Region: Thailand ap-southeast-7 region where IDC instance is deployed
         - CloudFormation script: "lz-iam-idc-permissionsets.json"
@@ -252,7 +252,7 @@ Complete these validation checks before starting the deployment of the SLZ.
         - Deployment Region: Thailand ap-southeast-7
         - CloudFormation script: "lz-central-network.json"
         - StackName: "lz-central-network"
-    - Note: Review the required "Network Access Control List" and "Firewall Policy" for Stateful to identify the rules to be set. Configuration of the Firewall Policies should be implemented using a separate CloudFormation script from the "lz-central-network.json". The security ploycy of the enpoint need to modify for restrited access form VPC.
+    - Note: Review the required "Network Access Control List" and "Firewall Policy" for Stateful to identify the rules to be set. Configuration of the Firewall Policies should be implemented using a separate CloudFormation script from the "lz-central-network.json". The security policies of the endpoint need to modify for restrict the access form VPC.
 
 15. Delegate Firewall Manager security administration for centralized network management using policies and IPAM Manager. 
     - Deployment Account: management account
