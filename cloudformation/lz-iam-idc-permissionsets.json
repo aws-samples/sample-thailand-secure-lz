@@ -1,6 +1,6 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
-    "Description": "Malaysia SLZ - create IAM Identity Center (IDC) Permission Sets. Run this in the same region as where the IDC is hosted.",
+    "Description": "Thailand SLZ - create IAM Identity Center (IDC) Permission Sets. Run this in the same region as where the IDC is hosted.",
     "Parameters": {
         "SSOInstanceArn": {
             "Type": "String",
