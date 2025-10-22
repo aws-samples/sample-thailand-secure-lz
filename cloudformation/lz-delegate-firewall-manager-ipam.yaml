@@ -1,0 +1,305 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Set delegated administration account for AWS Firewall Manager and IPAM. Deploy only in us-east-1, because Firewall Manager is a global service."
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Lambda Function Configuration"
+        Parameters:
+          - LoggingLevel
+      - Label:
+          default: "AWS Native Security Services Configuration"
+        Parameters:
+          - DelegatedSecurityAdminAccount
+          - FirewallManager
+      - Label:
+          default: "AWS Network Services Configuration"
+          Parameters:
+            - DelegatedIPAMAdminAccount
+            - IPAMManager
+    ParameterLabels:
+      DelegatedSecurityAdminAccount:
+        default: "Fill in Security Audit Admin Account"
+      FirewallManager:
+        default: "FirewallManager"
+      DelegatedIPAMAdminAccount:
+        default: "Fill in Network Account"
+      IPAMManager:
+        default: "IPAMManager"
+      LoggingLevel:
+        default: "Logging Level"
+
+Parameters:
+  DelegatedSecurityAdminAccount:
+    Type: String
+    Description: "AWS Account ID to be designated as Firewall Manager administrator (12-digit)"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: "Must be a 12-digit numeric string"
+  DelegatedIPAMAdminAccount:
+    Type: String
+    Description: "AWS Account ID to be designated as IPAM administrator (12-digit)- Network Account"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: "Must be a 12-digit numeric string"
+  KeyAdministratorArn:
+    Type: String
+    Description: "ARN of IAM user/role that will administer the KMS keys"
+  FirewallManager:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable Firewall Manager for central management of network security policies."
+    Type: String
+  IPAMManager:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable IPAM for central IP address management."
+    Type: String
+  LoggingLevel:
+    AllowedValues: ["CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING"]
+    Default: "INFO"
+    Description: "The logging level for the Lambda function."
+    Type: String
+
+Resources:
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Description: "Used by the Lambda to update the AWS native Security Services configuration."
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - "ec2:EnableIpamOrganizationAdminAccount"
+                  - "fms:AssociateAdminAccount"
+                  - "fms:DisassociateAdminAccount"
+                  - "sts:GetCallerIdentity"
+                  - "organizations:EnableOrganizationAdminAccount"
+                  - "organizations:DisableOrganizationAdminAccount"
+                  - "organizations:EnableAWSServiceAccess"
+                  - "organizations:RegisterDelegatedAdministrator"
+                  - "organizations:DeregisterDelegatedAdministrator"
+                  - "organizations:ListDelegatedAdministrators"
+                  - "organizations:ListAWSServiceAccessForOrganization"
+                  - "organizations:DescribeOrganizationalUnit"
+                  - "organizations:DescribeAccount"
+                  - "organizations:DescribeOrganization"
+                  - "organizations:ListAccounts"
+                  - "organizations:ListRoots"
+                Resource: "*"
+              - Effect: Allow
+                Action: "iam:CreateServiceLinkedRole"
+                Resource:
+                  [
+                    "arn:aws:iam::*:role/aws-service-role/fms.amazonaws.com/*",
+                    "arn:aws:iam::*:role/aws-service-role/ipam.amazonaws.com/*",
+                  ]
+              - Effect: Allow
+                Action:
+                  - "iam:DeleteServiceLinkedRole"
+                  - "iam:GetServiceLinkedRoleDeletionStatus"
+                Resource:
+                  [
+                    "arn:aws:iam::*:role/aws-service-role/fms.amazonaws.com/*",
+                    "arn:aws:iam::*:role/aws-service-role/ipam.amazonaws.com/*",
+                  ]
+      RoleName: "network-admin-delegation-lambda"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  AdminDelegationLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          import os
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(os.environ['LOGGING_LEVEL'])
+          fms_client = boto3.client("fms")
+          organizations_client = boto3.client("organizations")
+          sts_client = boto3.client('sts')
+          ipam_client = boto3.client('ec2')
+          account_id = sts_client.get_caller_identity()["Account"]
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {event}")
+              physical_id = event['LogicalResourceId']
+              delegated_admin_account_id = event['ResourceProperties']['DelegatedSecurityAdminAccount']
+              delegated_ipam_account_id = event['ResourceProperties']['DelegatedIPAMAdminAccount']
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      if event['ResourceProperties']['FirewallManager'] == 'true':
+                          set_firewallmanager_organization_admin(delegated_admin_account_id)
+                      elif event['ResourceProperties']['FirewallManager'] == 'false':
+                          reset_firewallmanager_organization_admin()
+                      if event['ResourceProperties']['IPAMManager'] == 'true':
+                          set_ipam_organization_admin(delegated_ipam_account_id)
+                      elif event['ResourceProperties']['IPAMManager'] == 'false':
+                          reset_ipam_organization_admin(delegated_ipam_account_id)  
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  elif event['RequestType'] == 'Delete':
+                      reset_firewallmanager_organization_admin()
+                      reset_ipam_organization_admin(delegated_ipam_account_id)
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  else:
+                      logger.error(f"Invalid request type: {event['RequestType']}")
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)              
+          def set_firewallmanager_organization_admin(account_id):
+              try:
+                  organizations_client.enable_aws_service_access(ServicePrincipal='fms.amazonaws.com')
+                  fms_client.associate_admin_account(AdminAccount=account_id)
+                  logger.info("Firewall Manager delegated security admin account updated successfully")
+              except ClientError as e:
+                  if 'account is already enabled' in e.response['Error']['Message'].lower() :
+                      logger.info(f"Firewall Manager delegated security admin account {account_id} is already a delegated administrator for your organization. {str(e)}")
+                  else:
+                      logger.error(f"Error updating Firewall Manager delegated security admin account configuration: {str(e)}")
+                      raise
+          def reset_firewallmanager_organization_admin():
+              try:
+                  fms_client.disassociate_admin_account()
+                  logger.info("Firewall Manager delegated security admin account reset successfully")
+              except ClientError as e:
+                  logger.error(f"Error resetting Firewall Manager delegated security admin account configuration: {str(e)}")
+                  raise
+          def set_ipam_organization_admin(account_id):
+              try:
+                  organizations_client.enable_aws_service_access(ServicePrincipal='ipam.amazonaws.com')
+                  ipam_client.enable_ipam_organization_admin_account(DelegatedAdminAccountId=account_id)
+                  logger.info("IPAM delegated admin account updated successfully")
+              except ClientError as e:
+                  if 'account is already enabled' in e.response['Error']['Message'].lower() :
+                      logger.info(f"IPAM delegated admin account {account_id} is already a delegated administrator for your organization. {str(e)}")
+                  else:
+                      logger.error(f"Error updating IPAM delegated admin account configuration: {str(e)}")
+                      raise
+          def reset_ipam_organization_admin(account_id):
+              try:
+                  ipam_client.disable_ipam_organization_admin_account(DelegatedAdminAccountId=account_id)
+                  logger.info("IPAM delegated admin account reset successfully")
+              except ClientError as e:
+                  logger.error(f"Error resetting IPAM delegated admin account configuration: {str(e)}")
+                  raise
+
+      Description: "Updates and deletes the AWS Firewall Manager admin delegation configuration at organization level in a region."
+      Environment:
+        Variables:
+          LOGGING_LEVEL: !Ref LoggingLevel
+      FunctionName: "firewall-manager-admin-delegation-update"
+      Handler: index.lambda_handler
+      LoggingConfig:
+        LogGroup: !Ref AdminDelegationLambdaLogGroup
+      MemorySize: 128
+      PackageType: Zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 60
+      ReservedConcurrentExecutions: 1
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  LogGroupKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: "Admin Delegation Lambda LogGroup Key"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "key-default-1"
+        Statement:
+          - Sid: "Allow Key Administration"
+            Effect: "Allow"
+            Principal:
+              AWS: !Ref "KeyAdministratorArn"
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+              - "kms:GenerateDataKey"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+            Resource: "*"
+          - Sid: "Allow CloudWatch Logs Service"
+            Effect: "Allow"
+            Principal:
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action:
+              - "kms:Decrypt*"
+              - "kms:Encrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:ReEncrypt*"
+              - "kms:Describe*"
+            Resource: "*"
+            Condition:
+              ArnEquals:
+                "kms:EncryptionContext:aws:logs:arn": !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+          - Sid: "Enable IAM User Permissions"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - "kms:*"
+            Resource: "*"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  AdminDelegationLambdaLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt LogGroupKey.Arn
+      LogGroupName: "/aws/lambda/admin-delegation-update-log"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  AdminDelegation:
+    Type: "Custom::AdminDelegation"
+    Properties:
+      FirewallManager: !Ref FirewallManager
+      IPAMManager: !Ref IPAMManager
+      DelegatedSecurityAdminAccount: !Ref DelegatedSecurityAdminAccount
+      DelegatedIPAMAdminAccount: !Ref DelegatedIPAMAdminAccount
+      ServiceToken: !GetAtt AdminDelegationLambda.Arn
+
+Outputs:
+  AdminDelegationLambda:
+    Description: Lambda function for updating AWS Firewall Manager configuration.
+    Value: !Ref AdminDelegationLambda

@@ -1,0 +1,304 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS GuardDuty with Protection Plans at AWS Organization level."
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Lambda Function Configuration"
+        Parameters:
+          - LoggingLevel
+      - Label:
+          default: "GuardDuty Protection Configuration"
+        Parameters:
+          - MalwareProtectionEC2
+          - S3Protection
+          - RuntimeMonitoring
+          - EKSAuditLog
+          - RDSProtection
+          - LambdaProtection
+      - Label:
+          default: "Security Services Configuration"
+    ParameterLabels:
+      GuardDutyDetectorId:
+        default: "GuardDuty Detector ID"
+      EncryptionKeyAdministratorArn:
+        default: "KMS Key Administrator ARN"
+      LoggingLevel:
+        default: "Logging Level"
+
+Parameters:
+  GuardDutyDetectorId:
+    Type: String
+    Description: "GuardDuty Detector ID in home region of delegated security administrator account"
+  MalwareProtectionEC2:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable GuardDuty Malware Protection for EC2."
+    Type: String
+  S3Protection:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable GuardDuty S3 Protection."
+    Type: String
+  RuntimeMonitoring:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable Runtime Monitoring for EKS and EC2."
+    Type: String
+  EKSAuditLog:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable GuardDuty EKS Audit Log Monitoring."
+    Type: String
+  RDSProtection:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable GuardDuty RDS Protection."
+    Type: String
+  LambdaProtection:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable GuardDuty Lambda Network Protection."
+    Type: String
+  EncryptionKeyAdministratorArn:
+    Type: String
+    Description: ARN of IAM user/role that will administer the KMS key
+  GuardDutyCloudWatchEncryptionKeyAliasName:
+    Type: String
+    Default: alias/guardduty-log-group-encryption
+    Description: Alias name for the KMS key (prefix with 'alias/', cannot use 'alias/aws' which is reserved for AWS managed keys)
+  LoggingLevel:
+    AllowedValues: ["CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING"]
+    Default: "INFO"
+    Description: "The logging level for the Lambda function."
+    Type: String
+
+Resources:
+  GuardDutyCloudWatchEncryptionKey:
+    Type: "AWS::KMS::Key"
+    Properties: 
+      Description: "GuardDuty CloudWatch LogGroup Key"
+      EnableKeyRotation: true
+      KeyPolicy: 
+        Version: "2012-10-17"
+        Id: "key-default-1"
+        Statement: 
+          - 
+            Sid: "Allow Key Administration"
+            Effect: "Allow"
+            Principal: 
+              AWS: !Ref EncryptionKeyAdministratorArn
+            Action: 
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+              - "kms:GenerateDataKey"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+            Resource: "*"
+          - 
+            Sid: "Allow CloudWatch Logs Service"
+            Effect: "Allow"
+            Principal: 
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action: 
+              - "kms:Decrypt*"
+              - "kms:Encrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:ReEncrypt*"
+              - "kms:Describe*"
+            Resource: "*"
+            Condition:
+              ArnEquals:
+                "kms:EncryptionContext:aws:logs:arn": !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+          - 
+            Sid: "Enable IAM User Permissions"
+            Effect: "Allow"
+            Principal: 
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: 
+              - "kms:*"
+            Resource: "*"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  GuardDutyCloudWatchEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Ref GuardDutyCloudWatchEncryptionKeyAliasName
+      TargetKeyId: !Ref GuardDutyCloudWatchEncryptionKey
+
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Description: "Used by the Lambda to update AWS GuardDuty configuration."
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - "guardduty:UpdateOrganizationConfiguration"
+                  - "guardduty:DescribeOrganizationConfiguration"
+                  - "organizations:ListDelegatedAdministrators"
+                  - "organizations:ListAWSServiceAccessForOrganization"
+                  - "organizations:DescribeOrganizationalUnit"
+                  - "organizations:DescribeAccount"
+                  - "organizations:DescribeOrganization"
+                  - "organizations:ListAccounts"
+                  - "sts:GetCallerIdentity"
+                Resource: "*"
+      RoleName: !Sub "guardduty-configuration-lambda-${AWS::Region}"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  GuardDutyConfigurationLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          import os
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(os.environ['LOGGING_LEVEL'])
+          guardduty_client = boto3.client("guardduty")
+          sts_client = boto3.client('sts')
+          account_id = sts_client.get_caller_identity()["Account"]
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {event}")
+              physical_id = event['LogicalResourceId']
+              detectorId = event['ResourceProperties']['GuardDutyDetectorId']
+              if event['ResourceProperties']['MalwareProtectionEC2'] == 'true':
+                malwareprotectionec2 = 'ALL'
+              else:
+                malwareprotectionec2 = 'NONE'
+              if event['ResourceProperties']['S3Protection'] == 'true':
+                s3protection = 'ALL'
+              else:
+                s3protection = 'NONE'
+              if event['ResourceProperties']['RuntimeMonitoring'] == 'true':
+                runtimemonitoring = 'ALL'
+              else:
+                runtimemonitoring = 'NONE'
+              if event['ResourceProperties']['EKSAuditLog'] == 'true':
+                eksauditlog = 'ALL'
+              else:
+                eksauditlog = 'NONE'
+              if event['ResourceProperties']['RDSProtection'] == 'true':
+                rdsprotection = 'ALL'
+              else:
+                rdsprotection = 'NONE'
+              if event['ResourceProperties']['LambdaProtection'] == 'true':
+                lambdaprotection = 'ALL'
+              else:
+                lambdaprotection = 'NONE'
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      guardduty_client.update_organization_configuration(
+                          DetectorId=detectorId,
+                          AutoEnableOrganizationMembers='ALL',
+                          Features=[
+                              {'Name': 'S3_DATA_EVENTS', 'AutoEnable': s3protection},
+                              {'Name': 'EKS_AUDIT_LOGS', 'AutoEnable': eksauditlog},
+                              {'Name': 'EBS_MALWARE_PROTECTION', 'AutoEnable': malwareprotectionec2},
+                              {'Name': 'RDS_LOGIN_EVENTS', 'AutoEnable': rdsprotection},
+                              {'Name': 'LAMBDA_NETWORK_LOGS', 'AutoEnable': lambdaprotection},
+                              {'Name': 'RUNTIME_MONITORING', 'AutoEnable': runtimemonitoring},
+                          ]                          
+                      )
+                      logger.info("GuardDuty configuration updated successfully")
+                  elif event['RequestType'] == 'Delete':
+                      guardduty_client.update_organization_configuration(
+                          DetectorId=detectorId,
+                          AutoEnableOrganizationMembers='NONE',
+                          Features=[
+                              {'Name': 'S3_DATA_EVENTS', 'AutoEnable': 'NONE'},
+                              {'Name': 'EKS_AUDIT_LOGS', 'AutoEnable': 'NONE'},
+                              {'Name': 'EBS_MALWARE_PROTECTION', 'AutoEnable': 'NONE'},
+                              {'Name': 'RDS_LOGIN_EVENTS', 'AutoEnable': 'NONE'},
+                              {'Name': 'LAMBDA_NETWORK_LOGS', 'AutoEnable': 'NONE'},
+                              {'Name': 'RUNTIME_MONITORING', 'AutoEnable': 'NONE'},
+                          ]                          
+                      )
+                      logger.info("GuardDuty configuration reset successfully")
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+              except ClientError as e:
+                  logger.error(f"Error: {e}")
+                  reason = str(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Reason': reason}, physical_id)
+                  raise           
+      Description: "Updates and deletes the AWS GuardDuty configuration at organization level in a region."
+      Environment:
+        Variables:
+          LOGGING_LEVEL: !Ref LoggingLevel
+      FunctionName: !Sub "${AWS::StackName}-guardduty-configuration"
+      Handler: index.lambda_handler
+      LoggingConfig:
+        LogGroup: !Ref GuardDutyConfigurationLambdaLogGroup
+      MemorySize: 128
+      PackageType: Zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.12
+      Timeout: 60
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  GuardDutyConfigurationLambdaLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt GuardDutyCloudWatchEncryptionKey.Arn
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  GuardDutyConfiguration:
+    Type: "Custom::GuardDutyConfiguration"
+    Properties:
+      GuardDutyDetectorId: !Ref GuardDutyDetectorId
+      MalwareProtectionEC2: !Ref MalwareProtectionEC2
+      S3Protection: !Ref S3Protection
+      RuntimeMonitoring: !Ref RuntimeMonitoring
+      EKSAuditLog: !Ref EKSAuditLog
+      RDSProtection: !Ref RDSProtection
+      LambdaProtection: !Ref LambdaProtection
+      ServiceToken: !GetAtt GuardDutyConfigurationLambda.Arn
+
+Outputs:
+  GuardDutyConfigurationLambda:
+    Description: Lambda function for updating AWS GuardDuty configuration.
+    Value: !Ref GuardDutyConfigurationLambda

@@ -1,0 +1,3041 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "In centralized network account, these resources are created: 2 VPCs with managed NAT, inspection VPC for firewall, and a separate network-endpoints VPC. Transit Gateway is created and shared using Resource Access Manager (RAM). Routes to Firewall Endpoints need to be manually specified.",
+    "Metadata": {
+        "VPCEndpointPolicy": {
+            "Description": "Policy allowing VPC traffic to S3 and DynamoDB endpoints",
+            "PolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Sid": "AllowS3Access",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": "s3:*",
+                        "Resource": "*"
+                    },
+                    {
+                        "Sid": "AllowDynamoDBAccess",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": "dynamodb:*",
+                        "Resource": "*"
+                    }
+                ]
+            },
+            "Note": "This is an example policy. Replace principals, resources, and actions with actual values for production use."
+        }
+    },
+    "Parameters": {
+        "NetworkInspectionVPCName": {
+            "Description": "Name of the firewall inspection VPC.",
+            "Type": "String",
+            "Default": "NetworkInspection"
+        },
+        "NetworkEndpointsVPCName": {
+            "Description": "Name of the central interface endpoints VPC.",
+            "Type": "String",
+            "Default": "NetworkEndpoints"
+        },
+        "TransitGatewayResourceShareTargets": {
+            "Type": "CommaDelimitedList",
+            "Description": "Principals to associate with Transit Gateway resource share (account id, arn of OU, arn of IAM, role or arn of IAM user). Recommend to use ID of the Organizational Unit to attach the policy (starts with 'arn:aws:organizations::ACCOUNT-ID:ou/ORGANIZATION-ID/ou-')",
+            "AllowedPattern": "arn:aws:organizations::[0-9]{12}:ou/.*",
+            "ConstraintDescription": "Must be a valid Organization Unit ARN"
+        },
+        "KeyAdministratorArn": {
+            "Type": "String",
+            "Description": "ARN of IAM user/role that will administer the KMS keys"
+        },
+        "CloudWatchKeyAlias": {
+            "Type": "String",
+            "Default": "alias/anfw-cloudwatch-logs-key",
+            "Description": "Alias name for the ANFW CloudWatch Logs KMS key"
+        }
+    },
+    "Mappings": {
+        "SubnetConfig": {
+            "NetworkInspection": {
+                "CIDR": "10.25.12.0/22"
+            },
+            "NetworkInspectionPubA": {
+                "CIDR": "10.25.12.0/24"
+            },
+            "NetworkInspectionPubB": {
+                "CIDR": "10.25.13.0/24"
+            },
+            "NetworkInspectionPubC": {
+                "CIDR": "10.25.14.0/24"
+            },
+            "NetworkInspectionA": {
+                "CIDR": "10.25.15.0/28"
+            },
+            "NetworkInspectionB": {
+                "CIDR": "10.25.15.16/28"
+            },
+            "NetworkInspectionC": {
+                "CIDR": "10.25.15.32/28"
+            },
+            "NetworkInspectionTgwAttachA": {
+                "CIDR": "10.25.15.48/28"
+            },
+            "NetworkInspectionTgwAttachB": {
+                "CIDR": "10.25.15.64/28"
+            },
+            "NetworkInspectionTgwAttachC": {
+                "CIDR": "10.25.15.80/28"
+            },
+            "NetworkEndpoints": {
+                "CIDR": "10.25.16.0/22"
+            },
+            "NetworkEndpointsA": {
+                "CIDR": "10.25.16.0/24"
+            },
+            "NetworkEndpointsB": {
+                "CIDR": "10.25.17.0/24"
+            },
+            "NetworkEndpointsC": {
+                "CIDR": "10.25.18.0/24"
+            },
+            "NetworkEndpointsTgwAttachA": {
+                "CIDR": "10.25.19.0/28"
+            },
+            "NetworkEndpointsTgwAttachB": {
+                "CIDR": "10.25.19.16/28"
+            },
+            "NetworkEndpointsTgwAttachC": {
+                "CIDR": "10.25.19.32/28"
+            }            
+        },
+        "RegionMap": {
+            "us-east-1": {
+                "AZs": [
+                    "us-east-1a",
+                    "us-east-1b",
+                    "us-east-1c"
+                ]
+            },
+            "ap-southeast-1": {
+                "AZs": [
+                    "ap-southeast-1a",
+                    "ap-southeast-1b",
+                    "ap-southeast-1c"
+                ]
+            },
+            "ap-southeast-7": {
+                "AZs": [
+                    "ap-southeast-7a",
+                    "ap-southeast-7b",
+                    "ap-southeast-7c"
+                ]
+            }
+        },
+        "VPCGatewayPrefixListId": {
+            "us-east-1": {
+                "S3": "pl-63a5400a",
+                "DynamoDB": "pl-02cd2c6b"
+            },
+            "ap-southeast-1": {
+                "S3": "pl-6fa54006",
+                "DynamoDB": "pl-67a5400e"
+            },
+            "ap-southeast-7": {
+                "S3": "pl-8fa045e6",
+                "DynamoDB": "pl-80a045e9"
+            }
+        }
+    },
+    "Resources": {
+        "CloudWatchLogsKey": {
+            "Type": "AWS::KMS::Key",
+            "Properties": {
+                "Description": "KMS key for ANFW CloudWatch Logs encryption",
+                "EnableKeyRotation": "true",
+                "KeyPolicy": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "Enable IAM User Permissions",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:root"
+                                }
+                            },
+                            "Action": "kms:*",
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "Allow Key Administrator",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Ref": "KeyAdministratorArn"
+                                }
+                            },
+                            "Action": [
+                                "kms:Create*",
+                                "kms:Describe*",
+                                "kms:Enable*",
+                                "kms:List*",
+                                "kms:Put*",
+                                "kms:Update*",
+                                "kms:Revoke*",
+                                "kms:Disable*",
+                                "kms:Get*",
+                                "kms:Delete*",
+                                "kms:TagResource",
+                                "kms:UntagResource",
+                                "kms:ScheduleKeyDeletion",
+                                "kms:CancelKeyDeletion"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "Allow CloudWatch Logs Service",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": {
+                                    "Fn::Sub": "logs.${AWS::Region}.amazonaws.com"
+                                }
+                            },
+                            "Action": [
+                                "kms:Encrypt*",
+                                "kms:Decrypt*",
+                                "kms:ReEncrypt*",
+                                "kms:GenerateDataKey*",
+                                "kms:Describe*"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "ArnLike": {
+                                    "kms:EncryptionContext:aws:logs:arn": {
+                                        "Fn::Sub": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "ANFW CloudWatch Logs Encryption"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "CloudWatchLogsKeyAlias": {
+            "Type": "AWS::KMS::Alias",
+            "Properties": {
+                "AliasName": {
+                    "Ref": "CloudWatchKeyAlias"
+                },
+                "TargetKeyId": {
+                    "Ref": "CloudWatchLogsKey"
+                }
+            }
+        },
+        "NetworkInspectionVPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "EnableDnsSupport": "true",
+                "EnableDnsHostnames": "true",
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkInspection",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Ref": "NetworkInspectionVPCName"
+                        }
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionPubA": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkInspectionPubA",
+                        "CIDR"
+                    ]
+                },
+                "MapPublicIpOnLaunch": "false",
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspectionPubA"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionPubB": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkInspectionPubB",
+                        "CIDR"
+                    ]
+                },
+                "MapPublicIpOnLaunch": "false",
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspectionPubB"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionPubC": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        2,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkInspectionPubC",
+                        "CIDR"
+                    ]
+                },
+                "MapPublicIpOnLaunch": "false",
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspectionPubC"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionA": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkInspectionA",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspectionA"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionB": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkInspectionB",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspectionB"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionC": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        2,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkInspectionC",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspectionC"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionTgwAttachA": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkInspectionTgwAttachA",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspectionTgwAttachA"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionTgwAttachB": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkInspectionTgwAttachB",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspectionTgwAttachB"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionTgwAttachC": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        2,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkInspectionTgwAttachC",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspectionTgwAttachC"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "InternetGateway": {
+            "Type": "AWS::EC2::InternetGateway",
+            "Properties": {
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "NetworkInspectionVPCName"
+                                    },
+                                    "-IGW"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "GatewayToInternet": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "InternetGatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "NetworkInspectionPubARouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspection-Pub-A"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionPubBRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspection-Pub-B"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionPubCRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspection-Pub-C"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionAPublicRoute": {
+            "Type": "AWS::EC2::Route",
+            "DependsOn": "GatewayToInternet",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionPubARouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "NetworkInspectionBPublicRoute": {
+            "Type": "AWS::EC2::Route",
+            "DependsOn": "GatewayToInternet",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionPubBRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "NetworkInspectionCPublicRoute": {
+            "Type": "AWS::EC2::Route",
+            "DependsOn": "GatewayToInternet",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionPubCRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "PublicSubnetRouteTableAssociationA": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionPubA"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionPubARouteTable"
+                }
+            }
+        },
+        "PublicSubnetRouteTableAssociationB": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionPubB"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionPubBRouteTable"
+                }
+            }
+        },
+        "PublicSubnetRouteTableAssociationC": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionPubC"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionPubCRouteTable"
+                }
+            }
+        },
+        "PublicNetworkAcl": {
+            "Type": "AWS::EC2::NetworkAcl",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "NetworkInspectionVPCName"
+                                    },
+                                    "-public-nacl"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "InboundHTTPPublicNetworkAclEntry": {
+            "Type": "AWS::EC2::NetworkAclEntry",
+            "Properties": {
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                },
+                "RuleNumber": "100",
+                "Protocol": "-1",
+                "RuleAction": "allow",
+                "Egress": "false",
+                "CidrBlock": "0.0.0.0/0",
+                "PortRange": {
+                    "From": "0",
+                    "To": "65535"
+                }
+            }
+        },
+        "OutboundPublicNetworkAclEntry": {
+            "Type": "AWS::EC2::NetworkAclEntry",
+            "Properties": {
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                },
+                "RuleNumber": "100",
+                "Protocol": "-1",
+                "RuleAction": "allow",
+                "Egress": "true",
+                "CidrBlock": "0.0.0.0/0",
+                "PortRange": {
+                    "From": "0",
+                    "To": "65535"
+                }
+            }
+        },
+        "PublicSubnetNetworkAclAssociationA": {
+            "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionPubA"
+                },
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                }
+            }
+        },
+        "PublicSubnetNetworkAclAssociationB": {
+            "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionPubB"
+                },
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                }
+            }
+        },
+        "PublicSubnetNetworkAclAssociationC": {
+            "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionPubC"
+                },
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                }
+            }
+        },
+        "ElasticIPA": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc"
+            }
+        },
+        "ElasticIPB": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc"
+            }
+        },
+        "ElasticIPC": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc"
+            }
+        },
+        "NATGatewayA": {
+            "Type": "AWS::EC2::NatGateway",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "ElasticIPA",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "NetworkInspectionPubA"
+                }
+            }
+        },
+        "NATGatewayB": {
+            "Type": "AWS::EC2::NatGateway",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "ElasticIPB",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "NetworkInspectionPubB"
+                }
+            }
+        },
+        "NATGatewayC": {
+            "Type": "AWS::EC2::NatGateway",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "ElasticIPC",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "NetworkInspectionPubC"
+                }
+            }
+        },
+        "NetworkInspectionARouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspection-A"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionBRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspection-B"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionCRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspection-C"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionASubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionA"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionARouteTable"
+                }
+            }
+        },
+        "NetworkInspectionBSubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionB"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionBRouteTable"
+                }
+            }
+        },
+        "NetworkInspectionCSubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionC"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionCRouteTable"
+                }
+            }
+        },
+        "PrivateRouteToInternetA": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionARouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NATGatewayA"
+                }
+            }
+        },
+        "PrivateRouteToInternetB": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionBRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NATGatewayB"
+                }
+            }
+        },
+        "PrivateRouteToInternetC": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionCRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NATGatewayC"
+                }
+            }
+        },
+        "PrivateRouteToInternalNetworkInspectionARouteTable": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionARouteTable"
+                },
+                "DestinationCidrBlock": "10.0.0.0/8",
+                "TransitGatewayId": {
+                    "Ref": "TransitGateway"
+                }
+            },
+            "DependsOn": "NetworkInspectionTgwAttachment"
+        },
+        "PrivateRouteToInternalNetworkInspectionBRouteTable": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionBRouteTable"
+                },
+                "DestinationCidrBlock": "10.0.0.0/8",
+                "TransitGatewayId": {
+                    "Ref": "TransitGateway"
+                }
+            },
+            "DependsOn": "NetworkInspectionTgwAttachment"
+        },
+        "PrivateRouteToInternalNetworkInspectionCRouteTable": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionCRouteTable"
+                },
+                "DestinationCidrBlock": "10.0.0.0/8",
+                "TransitGatewayId": {
+                    "Ref": "TransitGateway"
+                }
+            },
+            "DependsOn": "NetworkInspectionTgwAttachment"
+        },
+        "NetworkInspectionTgwAttachARouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspection-TgwAttach-A"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionTgwAttachBRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspection-TgwAttach-B"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionTgwAttachCRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspection-TgwAttach-C"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionTgwAttachRouteTableAssociationA": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionTgwAttachA"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionTgwAttachARouteTable"
+                }
+            }
+        },
+        "NetworkInspectionTgwAttachRouteTableAssociationB": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionTgwAttachB"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionTgwAttachBRouteTable"
+                }
+            }
+        },
+        "NetworkInspectionTgwAttachRouteTableAssociationC": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkInspectionTgwAttachC"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkInspectionTgwAttachCRouteTable"
+                }
+            }
+        },
+        "NetworkEndpointsARouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpoints-A"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsBRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpoints-B"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsCRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpoints-C"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsRouteToInternetA": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkEndpointsARouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "TransitGatewayId": {
+                    "Ref": "TransitGateway"
+                }
+            },
+            "DependsOn": "NetworkEndpointsTgwAttachment"
+        },
+        "NetworkEndpointsRouteToInternetB": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkEndpointsBRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "TransitGatewayId": {
+                    "Ref": "TransitGateway"
+                }
+            },
+            "DependsOn": "NetworkEndpointsTgwAttachment"
+        },
+        "NetworkEndpointsRouteToInternetC": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NetworkEndpointsCRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "TransitGatewayId": {
+                    "Ref": "TransitGateway"
+                }
+            },
+            "DependsOn": "NetworkEndpointsTgwAttachment"
+        },
+        "NetworkEndpointsRouteTableAssociationA": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkEndpointsA"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkEndpointsARouteTable"
+                }
+            }
+        },
+        "NetworkEndpointsRouteTableAssociationB": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkEndpointsB"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkEndpointsBRouteTable"
+                }
+            }
+        },
+        "NetworkEndpointsRouteTableAssociationC": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkEndpointsC"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkEndpointsCRouteTable"
+                }
+            }
+        },
+        "NetworkEndpointsVPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "EnableDnsSupport": "true",
+                "EnableDnsHostnames": "true",
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkEndpoints",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Ref": "NetworkEndpointsVPCName"
+                        }
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsA": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkEndpointsA",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpointsA"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsB": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkEndpointsB",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpointsB"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsC": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        2,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkEndpointsC",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpointsC"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsTgwAttachA": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkEndpointsTgwAttachA",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpointsTgwAttachA"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsTgwAttachB": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkEndpointsTgwAttachB",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpointsTgwAttachB"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsTgwAttachC": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        2,
+                        {
+                            "Fn::FindInMap": [
+                                "RegionMap",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "AZs"
+                            ]
+                        }
+                    ]
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "NetworkEndpointsTgwAttachC",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpointsTgwAttachC"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsTgwAttachARouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpoints-TgwAttach-A"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsTgwAttachBRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpoints-TgwAttach-B"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsTgwAttachCRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpoints-TgwAttach-C"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsTgwAttachRouteTableAssociationA": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkEndpointsTgwAttachA"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkEndpointsTgwAttachARouteTable"
+                }
+            }
+        },
+        "NetworkEndpointsTgwAttachRouteTableAssociationB": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkEndpointsTgwAttachB"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkEndpointsTgwAttachBRouteTable"
+                }
+            }
+        },
+        "NetworkEndpointsTgwAttachRouteTableAssociationC": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NetworkEndpointsTgwAttachC"
+                },
+                "RouteTableId": {
+                    "Ref": "NetworkEndpointsTgwAttachCRouteTable"
+                }
+            }
+        },
+        "StrictFirewallPolicy": {
+            "Type": "AWS::NetworkFirewall::FirewallPolicy",
+            "Properties": {
+                "FirewallPolicy": {
+                    "StatelessDefaultActions": [ "aws:forward_to_sfe" ],
+                    "StatelessFragmentDefaultActions": [ "aws:forward_to_sfe" ],
+                    "StatefulDefaultActions": [
+                        "aws:drop_established",
+                        "aws:alert_established"
+                    ],
+                    "StatefulEngineOptions": {
+                        "RuleOrder": "STRICT_ORDER"
+                    }
+                },
+                "FirewallPolicyName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "StrictFirewallPolicy"
+                        ]
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "Firewall": {
+            "Type": "AWS::NetworkFirewall::Firewall",
+            "Properties": {
+                "FirewallName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "Firewall"
+                        ]
+                    ]
+                },
+                "FirewallPolicyArn": {
+                    "Fn::GetAtt": [
+                        "StrictFirewallPolicy",
+                        "FirewallPolicyArn"
+                    ]
+                },
+                "SubnetMappings": [
+                    {
+                        "SubnetId": {
+                            "Ref": "NetworkInspectionA"
+                        }
+                    },
+                    {
+                        "SubnetId": {
+                            "Ref": "NetworkInspectionB"
+                        }
+                    },
+                    {    
+                        "SubnetId": {
+                            "Ref": "NetworkInspectionC"
+                        }
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "EnabledAnalysisTypes": [
+                    "TLS_SNI", "HTTP_HOST"
+                ],
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "FirewallLoggingConfiguration": {
+            "Type": "AWS::NetworkFirewall::LoggingConfiguration",
+            "Properties": {
+                "FirewallArn": {
+                    "Fn::GetAtt": [
+                        "Firewall",
+                        "FirewallArn"
+                    ]
+                },
+                "LoggingConfiguration": {
+                    "LogDestinationConfigs": [
+                        {
+                            "LogDestination": {
+                                "logGroup": {
+                                    "Ref": "FirewallAlertLogGroup"
+                                }
+                            },
+                            "LogDestinationType": "CloudWatchLogs",
+                            "LogType": "ALERT"
+                        },
+                        {
+                            "LogDestination": {
+                                "logGroup": {
+                                    "Ref": "FirewallFlowLogGroup"
+                                }
+                            },
+                            "LogDestinationType": "CloudWatchLogs",
+                            "LogType": "FLOW"
+                        }
+                    ]
+                }
+            }
+        },
+        "FirewallAlertLogGroup": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+                "LogGroupName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "FirewallAlertLog"
+                        ]
+                    ]
+                },
+                "KmsKeyId": {
+                    "Fn::GetAtt": ["CloudWatchLogsKey", "Arn"]
+                },
+                "RetentionInDays": 14,
+                "Tags": [
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "FirewallFlowLogGroup": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+                "LogGroupName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "FirewallFlowLog"
+                        ]
+                    ]
+                },
+                "KmsKeyId": {
+                    "Fn::GetAtt": ["CloudWatchLogsKey", "Arn"]
+                },
+                "RetentionInDays": 14,
+                "Tags": [
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionVPCFlowLogGroup": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+                "LogGroupName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "NetworkInspectionVPCFlowLog"
+                        ]
+                    ]
+                },
+                "KmsKeyId": {
+                    "Fn::GetAtt": ["CloudWatchLogsKey", "Arn"]
+                },
+                "RetentionInDays": 14,
+                "Tags": [
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsVPCFlowLogGroup": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+                "LogGroupName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "NetworkEndpointsVPCFlowLog"
+                        ]
+                    ]
+                },
+                "KmsKeyId": {
+                    "Fn::GetAtt": ["CloudWatchLogsKey", "Arn"]
+                },
+                "RetentionInDays": 14,
+                "Tags": [
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionVPCFlowLog": {
+            "Type": "AWS::EC2::FlowLog",
+            "Properties": {
+                "DeliverLogsPermissionArn": {
+                    "Fn::GetAtt": [
+                        "NetworkVPCLogRole",
+                        "Arn"
+                    ]
+                },
+                "LogGroupName": {
+                    "Ref": "NetworkInspectionVPCFlowLogGroup"
+                },
+                "ResourceId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "ResourceType": "VPC",
+                "TrafficType": "ALL",
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsVPCFlowLog": {
+            "Type": "AWS::EC2::FlowLog",
+            "Properties": {
+                "DeliverLogsPermissionArn": {
+                    "Fn::GetAtt": [
+                        "NetworkVPCLogRole",
+                        "Arn"
+                    ]
+                },
+                "LogGroupName": {
+                    "Ref": "NetworkEndpointsVPCFlowLogGroup"
+                },
+                "ResourceId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "ResourceType": "VPC",
+                "TrafficType": "ALL",
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "NetworkVPCLogRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "vpc-flow-logs.amazonaws.com"
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "NetworkVPCFlowLogPolicy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents",
+                                        "logs:DescribeLogGroups",
+                                        "logs:DescribeLogStreams"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "TransitGateway": {
+            "Type": "AWS::EC2::TransitGateway",
+            "Properties": {
+                "Description": "Transit Gateway for central network account",
+                "AutoAcceptSharedAttachments": "enable",
+                "DefaultRouteTableAssociation": "disable",
+                "DefaultRouteTablePropagation": "disable",
+                "DnsSupport": "enable",
+                "SecurityGroupReferencingSupport": "enable",
+                "VpnEcmpSupport": "enable",
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "TransitGateway"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "TransitGatewayResourceShare": {
+            "Type": "AWS::RAM::ResourceShare",
+            "Properties": {
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            "TransitGatewayResourceShare"
+                        ]
+                    ]
+                },
+                "AllowExternalPrincipals": false,
+                "Principals": {
+                        "Ref": "TransitGatewayResourceShareTargets"
+                },
+                "ResourceArns": [
+                    {
+                        "Fn::GetAtt": [
+                            "TransitGateway",
+                            "TransitGatewayArn"
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "TransitGatewayRouteTableNetworkMainCore": {
+            "Type": "AWS::EC2::TransitGatewayRouteTable",
+            "Properties": {
+                "TransitGatewayId": {
+                    "Ref": "TransitGateway"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "TGW-Network-Main-Core"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "TransitGatewayRouteTableNetworkMainCoreNetworkInspectionAssocation": {
+            "Type": "AWS::EC2::TransitGatewayRouteTableAssociation",
+            "Properties": {
+                "TransitGatewayAttachmentId": {
+                    "Ref": "NetworkInspectionTgwAttachment"
+                },
+                "TransitGatewayRouteTableId": {
+                    "Ref": "TransitGatewayRouteTableNetworkMainCore"
+                }
+            }
+        },
+        "TransitGatewayRouteTableNetworkMainCoreNetworkEndpointsAssocation": {
+            "Type": "AWS::EC2::TransitGatewayRouteTableAssociation",
+            "Properties": {
+                "TransitGatewayAttachmentId": {
+                    "Ref": "NetworkEndpointsTgwAttachment"
+                },
+                "TransitGatewayRouteTableId": {
+                    "Ref": "TransitGatewayRouteTableNetworkMainCore"
+                }
+            }
+        },
+        "TransitGatewayRouteTableNetworkMainCoreNetworkEndpointsPropagation": {
+            "Type": "AWS::EC2::TransitGatewayRouteTablePropagation",
+            "Properties": {
+                "TransitGatewayAttachmentId": {
+                    "Ref": "NetworkEndpointsTgwAttachment"
+                },
+                "TransitGatewayRouteTableId": {
+                    "Ref": "TransitGatewayRouteTableNetworkMainCore"
+                }
+            }
+        },
+        "TransitGatewayRouteTableNetworkMainSpoke": {
+            "Type": "AWS::EC2::TransitGatewayRouteTable",
+            "Properties": {
+                "TransitGatewayId": {
+                    "Ref": "TransitGateway"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "TGW-Network-Main-Spoke"
+                    }
+                ]
+            }
+        },
+        "TransitGatewayRouteTableNetworkMainSpokeNetworkEndpointsPropagation": {
+            "Type": "AWS::EC2::TransitGatewayRouteTablePropagation",
+            "Properties": {
+                "TransitGatewayAttachmentId": {
+                    "Ref": "NetworkEndpointsTgwAttachment"
+                },
+                "TransitGatewayRouteTableId": {
+                    "Ref": "TransitGatewayRouteTableNetworkMainSpoke"
+                }
+            }
+        },
+        "TransitGatewayRouteTableNetworkMainSpokeStaticRoute": {
+            "Type": "AWS::EC2::TransitGatewayRoute",
+            "Properties": {
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "TransitGatewayRouteTableId": {
+                    "Ref": "TransitGatewayRouteTableNetworkMainSpoke"
+                },
+                "TransitGatewayAttachmentId": {
+                    "Ref": "NetworkInspectionTgwAttachment"
+                }
+            }
+        },
+        "NetworkEndpointsTgwAttachment": {
+            "Type": "AWS::EC2::TransitGatewayAttachment",
+            "Properties": {
+                "SubnetIds": [
+                    {
+                        "Ref": "NetworkEndpointsTgwAttachA"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsTgwAttachB"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsTgwAttachC"
+                    }
+                ],
+                "TransitGatewayId": {
+                    "Ref": "TransitGateway"
+                },
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "Options": {
+                    "ApplianceModeSupport": "enable",
+                    "SecurityGroupReferencingSupport": "enable",
+                    "DnsSupport": "enable"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkEndpointsVpcTgwAttachment"
+                    }
+                ]
+            },
+            "DependsOn": "TransitGateway"
+        },
+        "NetworkInspectionTgwAttachment": {
+            "Type": "AWS::EC2::TransitGatewayAttachment",
+            "Properties": {
+                "SubnetIds": [
+                    {
+                        "Ref": "NetworkInspectionTgwAttachA"
+                    },
+                    {
+                        "Ref": "NetworkInspectionTgwAttachB"
+                    },
+                    {
+                        "Ref": "NetworkInspectionTgwAttachC"
+                    }
+                ],
+                "TransitGatewayId": {
+                    "Ref": "TransitGateway"
+                },
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "Options": {
+                    "ApplianceModeSupport": "enable",
+                    "SecurityGroupReferencingSupport": "enable",
+                    "DnsSupport": "enable"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "NetworkInspectionVpcTgwAttachment"
+                    }
+                ]
+            },
+            "DependsOn": "TransitGateway"
+        },
+        "NetworkEndpointsS3GatewayEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Gateway",
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.s3"
+                },
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": [
+                                "s3:*"
+                            ],
+                            "Resource": "*"
+                        }
+                    ]
+                },
+                "RouteTableIds": [
+                    {
+                        "Ref": "NetworkEndpointsARouteTable"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsBRouteTable"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsCRouteTable"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionS3GatewayEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Gateway",
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.s3"
+                },
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": [
+                                "s3:*"
+                            ],
+                            "Resource": "*"
+                        }
+                    ]
+                },
+                "RouteTableIds": [
+                    {
+                        "Ref": "NetworkInspectionARouteTable"
+                    },
+                    {
+                        "Ref": "NetworkInspectionBRouteTable"
+                    },
+                    {
+                        "Ref": "NetworkInspectionCRouteTable"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsDynamoDBGatewayEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Gateway",
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.dynamodb"
+                },
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": [
+                                "dynamodb:*"
+                            ],
+                            "Resource": "*"
+                        }
+                    ]
+                },
+                "RouteTableIds": [
+                    {
+                        "Ref": "NetworkEndpointsARouteTable"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsBRouteTable"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsCRouteTable"
+                    }
+                ]
+            }
+        },
+        "NetworkInspectionDynamoDBGatewayEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Gateway",
+                "VpcId": {
+                    "Ref": "NetworkInspectionVPC"
+                },
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.dynamodb"
+                },
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": [
+                                "dynamodb:*"
+                            ],
+                            "Resource": "*"
+                        }
+                    ]
+                },
+                "RouteTableIds": [
+                    {
+                        "Ref": "NetworkInspectionARouteTable"
+                    },
+                    {
+                        "Ref": "NetworkInspectionBRouteTable"
+                    },
+                    {
+                        "Ref": "NetworkInspectionCRouteTable"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsLogsInterfaceEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Interface",
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.logs"
+                },
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "PrivateDnsEnabled": true,
+                "SubnetIds": [
+                    {
+                        "Ref": "NetworkEndpointsA"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsB"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsC"
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "VPCInterfaceSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsKMSsInterfaceEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Interface",
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.kms"
+                },
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "PrivateDnsEnabled": true,
+                "SubnetIds": [
+                    {
+                        "Ref": "NetworkEndpointsA"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsB"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsC"
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "VPCInterfaceSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsEC2InterfaceEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Interface",
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.ec2"
+                },
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "PrivateDnsEnabled": true,
+                "SubnetIds": [
+                    {
+                        "Ref": "NetworkEndpointsA"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsB"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsC"
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "VPCInterfaceSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsSSMMessagesInterfaceEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Interface",
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.ssmmessages"
+                },
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "PrivateDnsEnabled": true,
+                "SubnetIds": [
+                    {
+                        "Ref": "NetworkEndpointsA"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsB"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsC"
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "VPCInterfaceSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsSSMInterfaceEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Interface",
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.ssm"
+                },
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "PrivateDnsEnabled": true,
+                "SubnetIds": [
+                    {
+                        "Ref": "NetworkEndpointsA"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsB"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsC"
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "VPCInterfaceSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsSecretsManagerInterfaceEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Interface",
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.secretsmanager"
+                },
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "PrivateDnsEnabled": true,
+                "SubnetIds": [
+                    {
+                        "Ref": "NetworkEndpointsA"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsB"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsC"
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "VPCInterfaceSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsECRDKRInterfaceEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Interface",
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.ecr.dkr"
+                },
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "PrivateDnsEnabled": true,
+                "SubnetIds": [
+                    {
+                        "Ref": "NetworkEndpointsA"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsB"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsC"
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "VPCInterfaceSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "NetworkEndpointsECRAPIInterfaceEndpoint": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Properties": {
+                "VpcEndpointType": "Interface",
+                "ServiceName": {
+                    "Fn::Sub": "com.amazonaws.${AWS::Region}.ecr.api"
+                },
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "PrivateDnsEnabled": true,
+                "SubnetIds": [
+                    {
+                        "Ref": "NetworkEndpointsA"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsB"
+                    },
+                    {
+                        "Ref": "NetworkEndpointsC"
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "VPCInterfaceSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "VPCInterfaceSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Allow HTTPS traffic from connected internal VPCs",
+                "GroupName": "vpcendpoints-sg",
+                "VpcId": {
+                    "Ref": "NetworkEndpointsVPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 443,
+                        "ToPort": 443,
+                        "CidrIp": "10.0.0.0/8"
+                    }
+                ],
+                "SecurityGroupEgress": [
+                    {
+                        "IpProtocol": "-1",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "NetworkInspectionVPCId": {
+            "Description": "VPCId of NetworkInspectionVPC",
+            "Value": {
+                "Ref": "NetworkInspectionVPC"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-NetworkInspectionVPC"
+                }
+            }
+        },
+        "NetworkInspectionPubA": {
+            "Description": "SubnetId of public subnet NetworkInspectionPubA",
+            "Value": {
+                "Ref": "NetworkInspectionPubA"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-NetworkInspectionPubA"
+                }
+            }
+        },
+        "NetworkInspectionPubB": {
+            "Description": "SubnetId of public subnet NetworkInspectionPubB",
+            "Value": {
+                "Ref": "NetworkInspectionPubB"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-NetworkInspectionPubB"
+                }
+            }
+        },
+        "NetworkInspectionPubC": {
+            "Description": "SubnetId of public subnet NetworkInspectionPubC",
+            "Value": {
+                "Ref": "NetworkInspectionPubC"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-NetworkInspectionPubC"
+                }
+            }
+        },
+        "NetworkInspectionA": {
+            "Description": "SubnetId of private subnet for firewall NetworkInspectionA",
+            "Value": {
+                "Ref": "NetworkInspectionA"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-NetworkInspectionA"
+                }
+            }
+        },
+        "NetworkInspectionB": {
+            "Description": "SubnetId of private subnet for firewall NetworkInspectionB",
+            "Value": {
+                "Ref": "NetworkInspectionB"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-NetworkInspectionB"
+                }
+            }
+        },
+        "NetworkInspectionC": {
+            "Description": "SubnetId of private subnet for firewall NetworkInspectionC",
+            "Value": {
+                "Ref": "NetworkInspectionC"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-NetworkInspectionC"
+                }
+            }
+        },
+        "DefaultSecurityGroup": {
+            "Description": "DefaultSecurityGroup Id",
+            "Value": {
+                "Fn::GetAtt": [
+                    "NetworkInspectionVPC",
+                    "DefaultSecurityGroup"
+                ]
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-DefaultSecurityGroup"
+                }
+            }
+        },
+        "NetworkEndpointsVPCId": {
+            "Description": "VPCId of NetworkEndpointsVPC",
+            "Value": {
+                "Ref": "NetworkEndpointsVPC"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-NetworkEndpointsVPC"
+                }
+            }
+        },
+        "Firewall": {
+            "Description": "AWS Network Firewall",
+            "Value": {
+                "Ref": "Firewall"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-Firewall"
+                }
+            }
+        },
+        "FirewallAlertLogGroup": {
+            "Description": "AWS Network Firewall Alert Logs",
+            "Value": {
+                "Ref": "FirewallAlertLogGroup"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-FirewallAlertLogGroup"
+                }
+            }
+        },
+        "FirewallFlowLogGroup": {
+            "Description": "AWS Network Firewall Flow Logs",
+            "Value": {
+                "Ref": "FirewallFlowLogGroup"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-FirewallFlowLogGroup"
+                }
+            }
+        },
+        "TransitGateway": {
+            "Description": "Transit Gateway",
+            "Value": {
+                "Ref": "TransitGateway"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-TransitGateway"
+                }
+            }
+        },
+        "TransitGatewayRouteTableNetworkMainCore": {
+            "Description": "Transit Gateway Route Table Network-Main-Core",
+            "Value": {
+                "Ref": "TransitGatewayRouteTableNetworkMainCore"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-TransitGatewayRouteTableNetworkMainCore"
+                }
+            }
+        },
+        "TransitGatewayRouteTableNetworkMainSpoke": {
+            "Description": "Transit Gateway Route Table Network-Main-Spoke (for member VPC)",
+            "Value": {
+                "Ref": "TransitGatewayRouteTableNetworkMainSpoke"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::Region}-${AWS::StackName}-TransitGatewayRouteTableNetworkMainSpoke"
+                }
+            }
+        }
+    }
+}

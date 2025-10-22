@@ -1,0 +1,1208 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Thailand SLZ Account Baseline - Combines EC2 security settings and S3 Block Public Access configuration"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Common Configuration"
+        Parameters:
+          - LoggingLevel
+      - Label:
+          default: "EC2 Data Protection and Security Configuration"
+        Parameters:
+          - EbsDefaultEncryption
+          - EbsDefaultEncryptionKeyAdministratorArn
+          - EbsDefaultEncryptionKeyAliasName
+          - EbsDefaultEncryptionKeyKeyDescription
+      - Label:
+          default: "IAM Password Policy Configuration"
+        Parameters:
+          - PasswordPolicyMinLength
+          - PasswordPolicyMaxAge
+          - PasswordPolicyRequireUppercase
+          - PasswordPolicyRequireLowercase
+          - PasswordPolicyRequireNumbers
+          - PasswordPolicyRequireSymbols
+          - PasswordPolicyPreventReuse
+      - Label:
+          default: "S3 Public Access Block Configuration"
+        Parameters:
+          - BlockPublicAcls
+          - BlockPublicPolicy
+          - IgnorePublicAcls
+          - RestrictPublicBuckets
+      - Label:
+          default: "SSM Default Host Management Configuration"
+        Parameters:
+          - EnableDefaultHostManagement
+      - Label:
+          default: "SSM Session Manager Configuration"
+        Parameters:
+          - SessionIdleTimeout
+          - EnableMaxSessionDuration
+          - MaxSessionDuration
+          - SessionManagerLogGroupName
+    ParameterLabels:
+      # EC2 Parameters
+      EbsDefaultEncryption:
+        default: "Enable EBS Default Encryption"
+      EbsDefaultEncryptionKeyAdministratorArn:
+        default: "KMS Key Administrator ARN"
+      EbsDefaultEncryptionKeyAliasName:
+        default: "EBS Encryption Key Alias"
+      EbsDefaultEncryptionKeyKeyDescription:
+        default: "EBS Encryption Key Description"
+      # Password Policy Parameters
+      PasswordPolicyMinLength:
+        default: "Minimum Password Length"
+      PasswordPolicyMaxAge:
+        default: "Password Expiration (days)"
+      PasswordPolicyRequireUppercase:
+        default: "Require Uppercase Letters"
+      PasswordPolicyRequireLowercase:
+        default: "Require Lowercase Letters"
+      PasswordPolicyRequireNumbers:
+        default: "Require Numbers"
+      PasswordPolicyRequireSymbols:
+        default: "Require Symbols"
+      PasswordPolicyPreventReuse:
+        default: "Prevent Password Reuse (count)"
+      # S3 Parameters
+      BlockPublicAcls:
+        default: "Block Public ACLs"
+      BlockPublicPolicy:
+        default: "Block Public Policy"
+      IgnorePublicAcls:
+        default: "Ignore Public ACLs"
+      RestrictPublicBuckets:
+        default: "Restrict Public Buckets"
+      # Common Parameters
+      LoggingLevel:
+        default: "Logging Level"
+      # SSM Parameters
+      EnableDefaultHostManagement:
+        default: "Enable Default Host Management"
+      SessionIdleTimeout:
+        default: "Session Idle Timeout (minutes)"
+      EnableMaxSessionDuration:
+        default: "Enable Maximum Session Duration"
+      MaxSessionDuration:
+        default: "Maximum Session Duration (minutes)"
+      SessionManagerLogGroupName:
+        default: "Session Manager Log Group Name"
+
+Parameters:
+  # EC2 Parameters
+  EbsDefaultEncryption:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable EBS Default Encryption for all new EBS volumes."
+    Type: String
+
+  EbsDefaultEncryptionKeyAdministratorArn:
+    Type: String
+    Description: "ARN of IAM user/role that will administer the KMS keys."
+
+  EbsDefaultEncryptionKeyAliasName:
+    Type: String
+    Default: alias/ebs-default-encryption
+    Description: "Alias name for the EBS encryption KMS key (prefix with 'alias/')."
+
+  EbsDefaultEncryptionKeyKeyDescription:
+    Type: String
+    Default: "KMS key for EBS volume default encryption"
+    Description: "Description for the EBS encryption KMS key."
+
+  # Password Policy Parameters
+  PasswordPolicyMinLength:
+    Type: Number
+    Default: 14
+    MinValue: 6
+    MaxValue: 128
+    Description: "Minimum length of the password (between 6 and 128 characters)."
+
+  PasswordPolicyMaxAge:
+    Type: Number
+    Default: 90
+    MinValue: 1
+    MaxValue: 365
+    Description: "Number of days before the password expires (between 1 and 365 days)."
+
+  PasswordPolicyRequireUppercase:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Require at least one uppercase letter in the password."
+
+  PasswordPolicyRequireLowercase:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Require at least one lowercase letter in the password."
+
+  PasswordPolicyRequireNumbers:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Require at least one number in the password."
+
+  PasswordPolicyRequireSymbols:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Require at least one non-alphanumeric character in the password."
+
+  PasswordPolicyPreventReuse:
+    Type: Number
+    Default: 24
+    MinValue: 1
+    MaxValue: 24
+    Description: "Number of previous passwords that users are prevented from reusing (between 1 and 24)."
+
+  # S3 Parameters
+  BlockPublicAcls:
+    AllowedValues: ["True", "False"]
+    Default: "True"
+    Description: "Block public access permissions applied to newly added buckets or objects."
+    Type: String
+
+  BlockPublicPolicy:
+    AllowedValues: ["True", "False"]
+    Default: "True"
+    Description: "Block new bucket and access point policies that grant public access."
+    Type: String
+
+  IgnorePublicAcls:
+    AllowedValues: ["True", "False"]
+    Default: "True"
+    Description: "Ignore all ACLs that grant public access to buckets and objects."
+    Type: String
+
+  RestrictPublicBuckets:
+    AllowedValues: ["True", "False"]
+    Default: "True"
+    Description: "Ignore public and cross-account access for buckets with policies that grant public access."
+    Type: String
+
+  # Backup Destination Account
+  BackupDestinationAccountId:
+    Type: String
+    Description: "Account ID of the central backup destination account (for cross-account access)."
+    Default: "123456789012"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: "Must be a 12-digit numeric string"
+
+  # Common Parameters
+  LoggingLevel:
+    AllowedValues: ["CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING"]
+    Default: "INFO"
+    Description: "The logging level for the Lambda functions."
+    Type: String
+
+  # SSM Default Host Management Configuration
+  EnableDefaultHostManagement:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Enable SSM Default Host Management Configuration to automatically manage EC2 instances"
+
+  # SSM Session Manager Configuration
+  SessionIdleTimeout:
+    Type: Number
+    Default: 20
+    MinValue: 1
+    MaxValue: 60
+    Description: "Session Manager idle timeout in minutes (1-60). Default is 20 minutes for security best practice."
+
+  EnableMaxSessionDuration:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Enable maximum session duration limit for Session Manager"
+
+  MaxSessionDuration:
+    Type: Number
+    Default: 60
+    MinValue: 1
+    MaxValue: 1440
+    Description: "Maximum session duration in minutes (1-1440). Only applies if EnableMaxSessionDuration is true."
+
+  SessionManagerLogGroupName:
+    Type: String
+    Default: "/aws/ssm/session-manager"
+    Description: "CloudWatch Log Group name for Session Manager session logs"
+
+Mappings:
+  Constants:
+    KMSAlias:
+      Name: "alias/account-baseline-log-group-encryption"
+
+Resources:
+  # KMS Keys
+  EbsDefaultEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Ref EbsDefaultEncryptionKeyKeyDescription
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: kms:*
+            Resource: "*"
+          - Sid: Allow Key Administrator
+            Effect: Allow
+            Principal:
+              AWS: !Ref EbsDefaultEncryptionKeyAdministratorArn
+            Action:
+              - kms:Create*
+              - kms:Describe*
+              - kms:Enable*
+              - kms:List*
+              - kms:Put*
+              - kms:Update*
+              - kms:Revoke*
+              - kms:Disable*
+              - kms:Get*
+              - kms:Delete*
+              - kms:TagResource
+              - kms:UntagResource
+              - kms:ScheduleKeyDeletion
+              - kms:CancelKeyDeletion
+            Resource: "*"
+          - Sid: Allow EBS and Backup Services
+            Effect: Allow
+            Principal:
+              AWS:
+              - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+              - !Sub "arn:aws:iam::${BackupDestinationAccountId}:root"
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          - Sid: Allow attachment of persistent resources
+            Effect: Allow
+            Principal:
+              AWS:
+              - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+              - !Sub "arn:aws:iam::${BackupDestinationAccountId}:root"
+            Action:
+              - kms:CreateGrant
+              - kms:ListGrants
+              - kms:RevokeGrant
+            Resource: "*"
+            Condition:
+              Bool:
+                "kms:GrantIsForAWSResource": true
+      Tags:
+        - Key: Purpose
+          Value: EBS Default Encryption
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  EbsDefaultEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Ref EbsDefaultEncryptionKeyAliasName
+      TargetKeyId: !Ref EbsDefaultEncryptionKey
+
+  CloudWatchEncryptionKey:
+    Type: "AWS::KMS::Key"
+    DependsOn: AWSSystemsManagerDefaultEC2InstanceManagementRole
+    Properties:
+      Description: "Account Baseline CloudWatch LogGroup Key"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "key-default-1"
+        Statement:
+          - Sid: "Allow Key Administration"
+            Effect: "Allow"
+            Principal:
+              AWS: !Ref EbsDefaultEncryptionKeyAdministratorArn
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+            Resource: "*"
+          - Sid: "Allow CloudWatch Logs Service"
+            Effect: "Allow"
+            Principal:
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action:
+              - "kms:Decrypt*"
+              - "kms:Encrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:ReEncrypt*"
+              - "kms:Describe*"
+            Resource: "*"
+            Condition:
+              ArnEquals:
+                "kms:EncryptionContext:aws:logs:arn": !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+          - Sid: "Allow SSM Session Manager"
+            Effect: "Allow"
+            Principal:
+              AWS: !GetAtt AWSSystemsManagerDefaultEC2InstanceManagementRole.Arn
+            Action:
+              - "kms:Decrypt"
+              - "kms:DescribeKey"
+              - "kms:GenerateDataKey"
+            Resource: "*"
+          - Sid: "Allow EC2 Instances for Session Manager"
+            Effect: "Allow"
+            Principal:
+              AWS: "*"
+            Action:
+              - "kms:Decrypt"
+              - "kms:DescribeKey"
+              - "kms:GenerateDataKey"
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "aws:PrincipalServiceName": "ec2.amazonaws.com"
+              StringLike:
+                "aws:userid": !Sub "${AWS::AccountId}:i-*"
+          - Sid: "Enable IAM User Permissions"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - "kms:*"
+            Resource: "*"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  CloudWatchEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !FindInMap [Constants, KMSAlias, Name]
+      TargetKeyId: !Ref CloudWatchEncryptionKey
+
+  # SSM Default EC2 Instance Management Role
+  AWSSystemsManagerDefaultEC2InstanceManagementRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "AWSSystemsManagerDefaultEC2InstanceManagementRole-${AWS::Region}"
+      Path: /service-role/
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+                - ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Description: "AWS Systems Manager service role for EC2 instance management"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  # EC2 Security Configuration
+  EC2LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Description: "Used by the Lambda to update the EC2 Data Protection and Security configuration and IAM password policy."
+      Policies:
+        - PolicyName: EC2LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - "ec2:GetEbsEncryptionByDefault"
+                  - "ec2:EnableEbsEncryptionByDefault"
+                  - "ec2:GetEbsDefaultKmsKeyId"
+                  - "ec2:DisableEbsEncryptionByDefault"
+                  - "ec2:ResetEbsDefaultKmsKeyId"
+                  - "ec2:ModifyEbsDefaultKmsKeyId"
+                  - "sts:GetCallerIdentity"
+                  - "iam:UpdateAccountPasswordPolicy"
+                  - "kms:Describe*"
+                Resource: "*"
+      Tags:
+        - Key: identity-perimeter-exception
+          Value: true
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+      RoleName: !Sub "ec2-data-protection-lambda-${AWS::Region}"
+
+  # SSM Default Host Management Lambda
+  SSMDefaultHostManagementLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: "/aws/lambda/ssm-default-host-management"
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt CloudWatchEncryptionKey.Arn
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  SSMDefaultHostManagementLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: AWSSystemsManagerDefaultEC2InstanceManagementRole
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          import os
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import cfnresponse
+          import json
+          import time
+          
+          logger = logging.getLogger()
+          logger.setLevel(os.environ['LOGGING_LEVEL'])
+          ssm_client = boto3.client('ssm')
+          
+          SERVICE_SETTING_ID = '/ssm/managed-instance/default-ec2-instance-management-role'
+          # Dynamically construct role ARN with region suffix
+          region = boto3.Session().region_name
+          DEFAULT_ROLE_ARN = f'service-role/AWSSystemsManagerDefaultEC2InstanceManagementRole-{region}'
+          
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {json.dumps(event)}")
+              physical_id = event['LogicalResourceId']
+              
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      enable_default_host_management = event['ResourceProperties'].get('EnableDefaultHostManagement', 'true').lower() == 'true'
+                      
+                      if enable_default_host_management:
+                          set_default_host_management()
+                      else:
+                          reset_default_host_management()
+                      
+                      # Send response with retry logic
+                      send_response_with_retry(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  
+                  elif event['RequestType'] == 'Delete':
+                      # For delete operations during updates, don't actually disable the setting
+                      logger.info("Delete request received. Leaving Default Host Management Configuration as-is for update operations.")
+                      
+                      # Send response with retry logic
+                      send_response_with_retry(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  
+                  else:
+                      logger.error(f"Invalid request type: {event['RequestType']}")
+                      send_response_with_retry(event, context, cfnresponse.FAILED, {}, physical_id)
+              
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  send_response_with_retry(event, context, cfnresponse.FAILED, {}, physical_id)
+          
+          def send_response_with_retry(event, context, status, data, physical_id, max_retries=3):
+              """Send CloudFormation response with retry logic"""
+              for attempt in range(max_retries):
+                  try:
+                      logger.info(f"Sending response (attempt {attempt + 1}/{max_retries}): Status={status}")
+                      
+                      # Add a small delay before sending response
+                      time.sleep(1)
+                      
+                      cfnresponse.send(event, context, status, data, physical_id)
+                      logger.info("Response sent successfully")
+                      return
+                      
+                  except Exception as e:
+                      logger.error(f"Failed to send response (attempt {attempt + 1}): {str(e)}")
+                      if attempt == max_retries - 1:
+                          logger.error("All retry attempts failed")
+                          # Last attempt - try one more time without delay
+                          try:
+                              cfnresponse.send(event, context, status, data, physical_id)
+                          except Exception as final_e:
+                              logger.error(f"Final attempt failed: {str(final_e)}")
+                      else:
+                          time.sleep(2 ** attempt)  # Exponential backoff
+          
+          def set_default_host_management():
+              try:
+                  logger.info(f"Configuring Default Host Management with role: {DEFAULT_ROLE_ARN}")
+                  
+                  response = ssm_client.update_service_setting(
+                      SettingId=SERVICE_SETTING_ID,
+                      SettingValue=DEFAULT_ROLE_ARN
+                  )
+                  logger.info(f"Successfully enabled Default Host Management Configuration with role path: {DEFAULT_ROLE_ARN}")
+                  
+              except ClientError as e:
+                  logger.error(f"Error enabling Default Host Management Configuration: {str(e)}")
+                  raise
+          
+          def reset_default_host_management():
+              try:
+                  # Reset the service setting (disable Default Host Management)
+                  response = ssm_client.reset_service_setting(
+                      SettingId=SERVICE_SETTING_ID
+                  )
+                  logger.info("Successfully disabled Default Host Management Configuration")
+                  
+              except ClientError as e:
+                  # If already disabled, that's fine
+                  if e.response['Error']['Code'] == 'ServiceSettingNotFound':
+                      logger.info("Default Host Management Configuration was already disabled")
+                  else:
+                      logger.error(f"Error disabling Default Host Management Configuration: {str(e)}")
+                      raise
+      Description: "Configures SSM Default Host Management Configuration"
+      Environment:
+        Variables:
+          LOGGING_LEVEL: !Ref LoggingLevel
+      FunctionName: "ssm-default-host-management"
+      Handler: index.lambda_handler
+      LoggingConfig:
+        LogGroup: !Ref SSMDefaultHostManagementLambdaLogGroup
+      MemorySize: 128
+      PackageType: Zip
+      Role: !GetAtt SSMLambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 60
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  # SSM Default Host Management Custom Resource
+  SSMDefaultHostManagement:
+    Type: Custom::SSMDefaultHostManagement
+    Properties:
+      ServiceToken: !GetAtt SSMDefaultHostManagementLambda.Arn
+      EnableDefaultHostManagement: !Ref EnableDefaultHostManagement
+
+  # SSM Session Manager Preferences Lambda
+  SSMSessionPreferencesLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: "/aws/lambda/ssm-session-preferences"
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt CloudWatchEncryptionKey.Arn
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  SSMSessionPreferencesLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: SessionManagerLogGroup
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          import os
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import cfnresponse
+          import json
+          
+          logger = logging.getLogger()
+          logger.setLevel(os.environ['LOGGING_LEVEL'])
+          ssm_client = boto3.client('ssm')
+          
+          DOCUMENT_NAME = 'SSM-SessionManagerRunShell'
+          
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {json.dumps(event)}")
+              physical_id = event['LogicalResourceId']
+              
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      update_session_preferences(event['ResourceProperties'])
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  
+                  elif event['RequestType'] == 'Delete':
+                      # On stack deletion, we'll leave the document in place as it's a system document
+                      logger.info("Delete request received. Session Manager preferences document will remain in place.")
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  
+                  else:
+                      logger.error(f"Invalid request type: {event['RequestType']}")
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+              
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+          
+          def update_session_preferences(properties):
+              try:
+                  # Extract properties
+                  idle_timeout = str(properties.get('IdleTimeout', '20'))
+                  enable_max_duration = properties.get('EnableMaxDuration', 'true').lower() == 'true'
+                  max_duration = str(properties.get('MaxDuration', '60'))
+                  log_group_name = properties.get('LogGroupName', '/aws/ssm/session-manager')
+                  kms_key_arn = properties.get('KmsKeyArn', '')
+                  
+                  logger.info(f"Using KMS Key ARN for Session Manager: {kms_key_arn}")
+                  
+                  # Build the Session Manager document content
+                  document_content = {
+                      "schemaVersion": "1.0",
+                      "description": "Document to hold regional settings for Session Manager",
+                      "sessionType": "Standard_Stream",
+                      "inputs": {
+                          "idleSessionTimeout": idle_timeout,
+                          "cloudWatchLogGroupName": log_group_name,
+                          "cloudWatchEncryptionEnabled": False,
+                          "cloudWatchStreamingEnabled": True,
+                          "runAsEnabled": False,
+                          "kmsKeyId": "",
+                          "s3BucketName": "",
+                          "s3KeyPrefix": "",
+                          "s3EncryptionEnabled": False
+                      }
+                  }
+                  
+                  # Add max session duration if enabled
+                  if enable_max_duration:
+                      document_content["inputs"]["maxSessionDuration"] = max_duration
+                  
+                  # Convert to JSON string
+                  content = json.dumps(document_content, indent=2)
+                  
+                  # Check if document exists
+                  try:
+                      response = ssm_client.get_document(Name=DOCUMENT_NAME)
+                      document_exists = True
+                      current_content = response.get('Content', '')
+                  except ClientError as e:
+                      if e.response['Error']['Code'] == 'InvalidDocument':
+                          document_exists = False
+                      else:
+                          raise
+                  
+                  if document_exists:
+                      # Update existing document
+                      try:
+                          response = ssm_client.update_document(
+                              Content=content,
+                              Name=DOCUMENT_NAME,
+                              DocumentVersion='$LATEST',
+                              DocumentFormat='JSON'
+                          )
+                          
+                          # Update document default version
+                          ssm_client.update_document_default_version(
+                              Name=DOCUMENT_NAME,
+                              DocumentVersion=response['DocumentDescription']['DocumentVersion']
+                          )
+                          
+                          logger.info(f"Successfully updated Session Manager preferences document")
+                      except ClientError as e:
+                          if e.response['Error']['Code'] == 'DuplicateDocumentContent':
+                              logger.info("Session Manager preferences document already has the desired content")
+                          else:
+                              raise
+                  else:
+                      # Create new document with proper Session Manager configuration
+                      response = ssm_client.create_document(
+                          Content=content,
+                          Name=DOCUMENT_NAME,
+                          DocumentType='Session',
+                          DocumentFormat='JSON',
+                          Tags=[
+                              {
+                                  'Key': 'CreatedBy',
+                                  'Value': 'SecureLandingZone'
+                              },
+                              {
+                                  'Key': 'Purpose', 
+                                  'Value': 'SessionManagerPreferences'
+                              }
+                          ]
+                      )
+                      logger.info(f"Successfully created Session Manager preferences document")
+                      
+                      # Set as default version explicitly
+                      ssm_client.update_document_default_version(
+                          Name=DOCUMENT_NAME,
+                          DocumentVersion=response['DocumentDescription']['DocumentVersion']
+                      )
+                      logger.info(f"Set document version {response['DocumentDescription']['DocumentVersion']} as default")
+                  
+                  logger.info(f"Session Manager preferences: IdleTimeout={idle_timeout}, MaxDuration={max_duration if enable_max_duration else 'Disabled'}, LogGroup={log_group_name}, KmsKey={kms_key_arn}")
+                  
+              except ClientError as e:
+                  logger.error(f"Error updating Session Manager preferences: {str(e)}")
+                  raise
+      Description: "Configures SSM Session Manager preferences"
+      Environment:
+        Variables:
+          LOGGING_LEVEL: !Ref LoggingLevel
+      FunctionName: "ssm-session-preferences"
+      Handler: index.lambda_handler
+      LoggingConfig:
+        LogGroup: !Ref SSMSessionPreferencesLambdaLogGroup
+      MemorySize: 128
+      PackageType: Zip
+      Role: !GetAtt SSMLambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 60
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  # SSM Session Manager Preferences Custom Resource
+  SSMSessionPreferences:
+    Type: Custom::SSMSessionPreferences
+    Properties:
+      ServiceToken: !GetAtt SSMSessionPreferencesLambda.Arn
+      IdleTimeout: !Ref SessionIdleTimeout
+      EnableMaxDuration: !Ref EnableMaxSessionDuration
+      MaxDuration: !Ref MaxSessionDuration
+      LogGroupName: !Ref SessionManagerLogGroupName
+      KmsKeyArn: !GetAtt CloudWatchEncryptionKey.Arn
+
+  EC2DataProtectionSecurityUpdateLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          import os
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(os.environ['LOGGING_LEVEL'])
+          ec2_client = boto3.client("ec2")
+          sts_client = boto3.client('sts')
+          account_id = sts_client.get_caller_identity()["Account"]
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {event}")
+              physical_id = event['LogicalResourceId']
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      set_ebs_default_encryption(event['ResourceProperties'])
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  elif event['RequestType'] == 'Delete':
+                      reset_ebs_default_encryption()
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  else:
+                      logger.error(f"Invalid request type: {event['RequestType']}")
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+          def set_ebs_default_encryption(properties):
+              try:
+                  ebskmskeyid = properties['EbsDefaultEncryptionKMSKeyAlias'].lower()
+                  ec2_client.enable_ebs_encryption_by_default()
+                  ec2_client.modify_ebs_default_kms_key_id(KmsKeyId=ebskmskeyid)
+                  logger.info("EC2 Data Protection and Security updated successfully")
+              except ClientError as e:
+                  logger.error(f"Error updating EC2 Data Protection and Security configuration: {str(e)}")
+                  raise
+          def reset_ebs_default_encryption():
+              try:
+                  ec2_client.reset_ebs_default_kms_key_id()
+                  logger.info("EC2 Data Protection and Security EBS Default Encryption reset successfully")
+              except ClientError as e:
+                  logger.error(f"Error resetting EC2 Data Protection and Security configuration: {str(e)}")
+                  raise
+      Description: "Updates and deletes the account-level EC2 Data Protection and Security configuration at account level in a region."
+      Environment:
+        Variables:
+          LOGGING_LEVEL: !Ref LoggingLevel
+      FunctionName: "ec2-data-protection-security-update"
+      Handler: index.lambda_handler
+      LoggingConfig:
+        LogGroup: !Ref EC2DataProtectionSecurityUpdateLambdaLogGroup
+      MemorySize: 128
+      PackageType: Zip
+      Role: !GetAtt EC2LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 60
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  EC2DataProtectionSecurityUpdateLambdaLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt CloudWatchEncryptionKey.Arn
+      LogGroupName: "/aws/lambda/ec2-data-protection-security-update"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  EC2DataProtectionSecurity:
+    Type: "Custom::EC2DataProtectionSecurity"
+    Properties:
+      EbsDefaultEncryption: !Ref EbsDefaultEncryption
+      EbsDefaultEncryptionKMSKeyAlias: !Ref EbsDefaultEncryptionKeyAlias
+      ServiceToken: !GetAtt EC2DataProtectionSecurityUpdateLambda.Arn
+
+  # Password Policy Configuration
+  SetPasswordPolicyLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: "/aws/lambda/SetPasswordPolicyLambda"
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt CloudWatchEncryptionKey.Arn
+
+  SetPasswordPolicyLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: SetPasswordPolicyLambdaLogGroup
+    Properties:
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      Role: !GetAtt EC2LambdaExecutionRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {event}")
+              iam = boto3.client('iam')
+              
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      logger.info("Updating account password policy")
+                      iam.update_account_password_policy(
+                          MinimumPasswordLength=int(event['ResourceProperties']['MinimumPasswordLength']),
+                          RequireSymbols=event['ResourceProperties']['RequireSymbols'] == 'true',
+                          RequireNumbers=event['ResourceProperties']['RequireNumbers'] == 'true',
+                          RequireUppercaseCharacters=event['ResourceProperties']['RequireUppercaseCharacters'] == 'true',
+                          RequireLowercaseCharacters=event['ResourceProperties']['RequireLowercaseCharacters'] == 'true',
+                          MaxPasswordAge=int(event['ResourceProperties']['MaxPasswordAge']),
+                          PasswordReusePrevention=int(event['ResourceProperties']['PasswordReusePrevention'])
+                      )
+                      logger.info("Successfully updated account password policy")
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  elif event['RequestType'] == 'Delete':
+                      logger.info("Delete request received. No action taken on password policy.")
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  logger.error(f"Error updating password policy: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  CustomPasswordPolicy:
+    Type: Custom::SetPasswordPolicy
+    DependsOn: SetPasswordPolicyLambda
+    Properties:
+      ServiceToken: !GetAtt SetPasswordPolicyLambda.Arn
+      MinimumPasswordLength: !Ref PasswordPolicyMinLength
+      RequireSymbols: !Ref PasswordPolicyRequireSymbols
+      RequireNumbers: !Ref PasswordPolicyRequireNumbers
+      RequireUppercaseCharacters: !Ref PasswordPolicyRequireUppercase
+      RequireLowercaseCharacters: !Ref PasswordPolicyRequireLowercase
+      MaxPasswordAge: !Ref PasswordPolicyMaxAge
+      PasswordReusePrevention: !Ref PasswordPolicyPreventReuse
+
+  # S3 Block Public Access Configuration
+  S3LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Description: "Used by the S3 Public Access Block Lambda to update the account-level S3 public access block configuration."
+      Policies:
+        - PolicyName: S3LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - "s3:DeletePublicAccessBlock"
+                  - "s3:PutAccountPublicAccessBlock"
+                  - "sts:GetCallerIdentity"
+                Resource: "*"
+      RoleName: !Sub "s3-public-access-block-update-${AWS::Region}"
+      Tags:
+        - Key: identity-perimeter-exception
+          Value: true
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  S3PublicAccessBlockLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          import os
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(os.environ['LOGGING_LEVEL'])
+          s3control_client = boto3.client("s3control")
+          sts_client = boto3.client('sts')
+          account_id = sts_client.get_caller_identity()["Account"]
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {event}")
+              physical_id = event['LogicalResourceId']
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      set_public_access_block(event['ResourceProperties'])
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  elif event['RequestType'] == 'Delete':
+                      delete_public_access_block()
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  else:
+                      logger.error(f"Invalid request type: {event['RequestType']}")
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+          def set_public_access_block(properties):
+              try:
+                  s3control_client.put_public_access_block(
+                      PublicAccessBlockConfiguration={
+                          'BlockPublicAcls': properties['BlockPublicAcls'].lower() == 'true',
+                          'BlockPublicPolicy': properties['BlockPublicPolicy'].lower() == 'true',
+                          'IgnorePublicAcls': properties['IgnorePublicAcls'].lower() == 'true',
+                          'RestrictPublicBuckets': properties['RestrictPublicBuckets'].lower() == 'true'
+                      },
+                      AccountId=account_id
+                  )
+                  logger.info("S3 Public Access Block configuration updated successfully")
+              except ClientError as e:
+                  logger.error(f"Error updating S3 Public Access Block configuration: {str(e)}")
+                  raise
+          def delete_public_access_block():
+              try:
+                  s3control_client.delete_public_access_block(AccountId=account_id)
+                  logger.info("S3 Public Access Block configuration deleted successfully")
+              except ClientError as e:
+                  if e.response['Error']['Code'] == 'NoSuchPublicAccessBlockConfiguration':
+                      logger.info("S3 Public Access Block configuration was already deleted or did not exist")
+                  else:
+                      logger.error(f"Error deleting S3 Public Access Block configuration: {str(e)}")
+                      raise
+      Description: "Updates and deletes the account-level S3 Public Access Block configuration."
+      Environment:
+        Variables:
+          LOGGING_LEVEL: !Ref LoggingLevel
+      FunctionName: "s3-public-access-block-update"
+      Handler: index.lambda_handler
+      LoggingConfig:
+        LogGroup: !Ref S3PublicAccessBlockLambdaLogGroup
+      MemorySize: 128
+      PackageType: Zip
+      Role: !GetAtt S3LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 60
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  S3PublicAccessBlockLambdaLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt CloudWatchEncryptionKey.Arn
+      LogGroupName: "/aws/lambda/s3-public-access-block-update"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  S3PublicAccessBlock:
+    Type: "Custom::S3PublicAccessBlock"
+    Properties:
+      BlockPublicAcls: !Ref BlockPublicAcls
+      BlockPublicPolicy: !Ref BlockPublicPolicy
+      IgnorePublicAcls: !Ref IgnorePublicAcls
+      RestrictPublicBuckets: !Ref RestrictPublicBuckets
+      ServiceToken: !GetAtt S3PublicAccessBlockLambda.Arn
+
+  # SSM Session Manager Configuration
+  SessionManagerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Ref SessionManagerLogGroupName
+      RetentionInDays: 90
+      KmsKeyId: !GetAtt CloudWatchEncryptionKey.Arn
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  # SSM Lambda Execution Role
+  SSMLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Description: "Used by the SSM Lambda functions to configure Default Host Management and Session Manager preferences."
+      Policies:
+        - PolicyName: SSMLambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - "ssm:GetServiceSetting"
+                  - "ssm:ResetServiceSetting"
+                  - "ssm:UpdateServiceSetting"
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:servicesetting/ssm/managed-instance/default-ec2-instance-management-role"
+              - Effect: Allow
+                Action:
+                  - "iam:PassRole"
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/service-role/AWSSystemsManagerDefaultEC2InstanceManagementRole-${AWS::Region}"
+                Condition:
+                  StringEquals:
+                    "iam:PassedToService": "ssm.amazonaws.com"
+              - Effect: Allow
+                Action:
+                  - "ssm:CreateDocument"
+                  - "ssm:UpdateDocument"
+                  - "ssm:DeleteDocument"
+                  - "ssm:GetDocument"
+                  - "ssm:DescribeDocument"
+                  - "ssm:UpdateDocumentDefaultVersion"
+                  - "ssm:AddTagsToResource"
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:document/SSM-SessionManagerRunShell"
+              - Effect: Allow
+                Action:
+                  - "sts:GetCallerIdentity"
+                Resource: "*"
+      RoleName: !Sub "ssm-configuration-lambda-${AWS::Region}"
+      Tags:
+        - Key: identity-perimeter-exception
+          Value: true
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+Outputs:
+  EbsDefaultEncryptionKMSKeyId:
+    Description: ID of the created KMS key for EBS encryption
+    Value: !Ref EbsDefaultEncryptionKey
+
+  EbsDefaultEncryptionKMSKeyArn:
+    Description: ARN of the created KMS key for EBS encryption
+    Value: !GetAtt EbsDefaultEncryptionKey.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-EbsDefaultEncryptionKMSKeyArn"
+
+  EbsDefaultEncryptionKMSKeyAlias:
+    Description: Alias of the created KMS key for EBS encryption
+    Value: !Ref EbsDefaultEncryptionKeyAliasName
+
+  CloudWatchEncryptionKeyArn:
+    Description: ARN of the created KMS key for CloudWatch logs
+    Value: !GetAtt CloudWatchEncryptionKey.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudWatchEncryptionKeyArn"
+
+  CloudWatchEncryptionKeyAlias:
+    Description: Alias of the created KMS key for CloudWatch logs
+    Value: !FindInMap [Constants, KMSAlias, Name]
+
+  S3BlockPublicAccessStatus:
+    Description: Status of S3 Block Public Access configuration
+    Value: !If [IsS3BlockingEnabled, "Enabled", "Disabled"]
+
+  SSMDefaultHostManagementStatus:
+    Description: "Status of SSM Default Host Management Configuration"
+    Value: !If [IsDefaultHostManagementEnabled, "Enabled", "Disabled"]
+
+  SessionManagerLogGroupArn:
+    Description: "ARN of the Session Manager CloudWatch Log Group"
+    Value: !GetAtt SessionManagerLogGroup.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-SessionManagerLogGroupArn"
+
+  SessionManagerPreferencesStatus:
+    Description: "Session Manager preferences configuration status"
+    Value: !Sub "Configured - Idle timeout: ${SessionIdleTimeout} minutes, Max duration: ${MaxSessionDuration} minutes"
+
+  AWSSystemsManagerDefaultEC2InstanceManagementRoleArn:
+    Description: "ARN of the AWS Systems Manager Default EC2 Instance Management Role"
+    Value: !GetAtt AWSSystemsManagerDefaultEC2InstanceManagementRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-AWSSystemsManagerDefaultEC2InstanceManagementRoleArn"
+
+Conditions:
+  IsS3BlockingEnabled: !And
+    - !Equals [!Ref BlockPublicAcls, "True"]
+    - !Equals [!Ref BlockPublicPolicy, "True"]
+    - !Equals [!Ref IgnorePublicAcls, "True"]
+    - !Equals [!Ref RestrictPublicBuckets, "True"]
+  
+  IsDefaultHostManagementEnabled: !Equals [!Ref EnableDefaultHostManagement, "true"]
