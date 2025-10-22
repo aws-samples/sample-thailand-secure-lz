@@ -431,3 +431,5 @@ An Organization CloudTrail for S3 Data events is used to monitor and log access 
 4. Control Tower Backup enrollment failure
 - Error description "Insufficient privileges to create a backup vault. Creating a backup vault requires backup-storage and KMS permissions."
 - Review the KMS Key used for Control Tower Backup, to ensure that the region key replication is the same as Control Tower governed regions.
+
+5. When deploy lz-delegate-firewall-manager-ipam.yaml on the Deployment step 15 if you got an error please delete the stack and re-deploy
