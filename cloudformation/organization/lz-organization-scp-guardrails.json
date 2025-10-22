@@ -1,0 +1,332 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates baseline guardrail Service Control Policy to deny leaving organization and deny unauthorized IAM user creation",
+    "Parameters": {
+        "BaselineGuardrailPolicyName": {
+            "Type": "String",
+            "Default": "th-slz-guardrail",
+            "Description": "Name of the baseline guardrail Service Control Policy"
+        },
+        "PolicyDescription": {
+            "Type": "String",
+            "Default": "SCP to prevent account leaving organization and deny unauthorized IAM user creation across the organization",
+            "Description": "Description for the Service Control Policy"
+        },
+        "TargetOrganizationalUnitIds": {
+            "Type": "CommaDelimitedList",
+            "Description": "ID of the Organizational Unit to attach the policy (starts with 'ou-')"
+        },
+        "TargetRootOrgIdforEC2Settings": {
+            "Type": "CommaDelimitedList",
+            "Description": "ID of the Root Organization to attach the EC2 policy (starts with 'r-')"
+        }
+    },
+    "Resources": {
+        "BaselineGuardrailPolicy": {
+            "Type": "AWS::Organizations::Policy",
+            "Properties": {
+                "Content": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "DenyMemberAccountsLeavingOrganization",
+                            "Effect": "Deny",
+                            "Action": [
+                                "organizations:LeaveOrganization"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Sid": "DenyIAMCreateUserAndKeys",
+                            "Effect": "Deny",
+                            "Action": [
+                                "iam:AddUserToGroup",
+                                "iam:CreateGroup",
+                                "iam:CreateLoginProfile",
+                                "iam:CreateUser",
+                                "iam:DeleteGroup",
+                                "iam:DeleteUser",
+                                "iam:RemoveUserFromGroup",
+                                "iam:UpdateGroup",
+                                "iam:UpdateUser",
+                                "iam:CreateAccessKey",
+                                "iam:UpdateAccessKey",
+                                "iam:DeleteAccessKey"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "StringNotLike": {
+                                    "aws:PrincipalArn": [
+                                        "arn:aws:iam::*:role/AWSControlTowerExecution"
+                                    ]
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyCreateRDSwithoutEncryption",
+                            "Effect": "Deny",
+                            "Action": [
+                                "rds:CreateDBInstance",
+                                "rds:CreateDBCluster"
+                            ],
+                            "Resource": [
+                                "*"
+                            ],
+                            "Condition": {
+                                "ForAnyValue:BoolIfExists": {
+                                    "rds:StorageEncrypted": "false"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyCreateEFSwithoutEncryption",
+                            "Effect": "Deny",
+                            "Action": [
+                                "elasticfilesystem:CreateFileSystem"
+                            ],
+                            "Resource": [
+                                "*"
+                            ],
+                            "Condition": {
+                                "ForAnyValue:BoolIfExists": {
+                                    "elasticfilesystem:Encrypted": "false"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyCreatePubliclyAccessibleEFS",
+                            "Effect": "Deny",
+                            "Action": [
+                                "elasticfilesystem:CreateFileSystem",
+                                "elasticfilesystem:UpdateFileSystem",
+                                "elasticfilesystem:ClientWrite",
+                                "elasticfilesystem:ClientRootAccess"
+                            ],
+                            "Resource": [
+                                "*"
+                            ],
+                            "Condition": {
+                                "ForAnyValue:BoolIfExists": {
+                                    "elasticfilesystem:AccessedViaMountTarget": "false"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyPublicOpenSearchDomains",
+                            "Effect": "Deny",
+                            "Action": [
+                                "es:CreateDomain",
+                                "es:UpdateDomainConfig"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "Bool": {
+                                    "es:VPCEnabled": "false"
+                                }
+                            }
+                        },                        
+                        {
+                            "Effect": "Deny",
+                            "Action": [
+                                "ec2:DisableEbsEncryptionByDefault"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Deny",
+                            "Action": "ec2:CreateVolume",
+                            "Resource": "*",
+                            "Condition": {
+                                "Bool": {
+                                    "ec2:Encrypted": "false"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "PreventEc2MountUnencryptedVolume",
+                            "Effect": "Deny",
+                            "Action": "ec2:RunInstances",
+                            "Resource": "arn:aws:ec2:*:*:volume/*",
+                            "Condition": {
+                                "Bool": {
+                                    "ec2:Encrypted": "false"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "PreventPublicBucketACL",
+                            "Effect": "Deny",
+                            "Action": [
+                                "s3:PutBucketAcl",
+                                "s3:CreateBucket"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "StringEquals": {
+                                    "s3:x-amz-acl": [
+                                        "public-read",
+                                        "public-read-write"
+                                    ]
+                                },
+                                "StringNotEqualsIfExists": {
+                                    "aws:PrincipalTag/identity-perimeter-exception": "true"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "PreventS3PublicAccessBlockConfigurations",
+                            "Effect": "Deny",
+                            "Action": "s3:PutAccountPublicAccessBlock",
+                            "Resource": "*",
+                            "Condition": {
+                                "StringNotEqualsIfExists": {
+                                    "aws:PrincipalTag/identity-perimeter-exception": "true"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "PreventDisableAMISnapshotPublicAccess",
+                            "Action": [
+                                "ec2:DisableImageBlockPublicAccess",
+                                "ec2:DisableSnapshotBlockPublicAccess"
+                            ],
+                            "Resource": "*",
+                            "Effect": "Deny"
+                        },
+                        {
+                            "Sid": "DenyCreatingDataResourcesUSEast1",
+                            "Action": [
+                                "ec2:Create*",
+                                "ec2:Modify*",
+                                "ec2:Attach*",
+                                "ec2:Authorize*",
+                                "ec2:Disassociate*",
+                                "ec2:Delete*",
+                                "ec2:Accept*",
+                                "ec2:Run*",
+                                "ec2:Revoke*",
+                                "ec2:Start*",
+                                "ec2:Authorize*",
+                                "ec2:Revoke*",
+                                "ebs:*",
+                                "rds:*",
+                                "elasticfilesystem:*",
+                                "es:*",
+                                "storagegateway:*"
+                            ],
+                            "Resource": "*",
+                            "Effect": "Deny",
+                            "Condition": {
+                                "StringEquals": {
+                                    "aws:RequestedRegion": "us-east-1"
+                                },
+                                "StringNotEquals": {
+                                    "aws:PrincipalTag/identity-perimeter-exception": "true"
+                                },
+                                "StringNotLike": {
+                                    "aws:PrincipalArn": "arn:aws:iam::*:role/AWSControlTowerExecution"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyMultiRegionKMSKey",
+                            "Effect": "Deny",
+                            "Resource": "*",
+                            "Action": [
+                                "kms:CreateKey"
+                            ],
+                            "Condition": {
+                                "ForAnyValue:BoolIfExists": {
+                                    "kms:MultiRegion": "true"
+                                }
+                            }
+                        }
+                    ]
+                },
+                "Description": {
+                    "Ref": "PolicyDescription"
+                },
+                "Name": {
+                    "Ref": "BaselineGuardrailPolicyName"
+                },
+                "Type": "SERVICE_CONTROL_POLICY",
+                "TargetIds": {
+                    "Ref": "TargetOrganizationalUnitIds"
+                },
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "Security Control"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "DeclarativePolicy": {
+            "DeletionPolicy": "Retain",
+            "Type": "AWS::Organizations::Policy",
+            "Properties": {
+                "Type": "DECLARATIVE_POLICY_EC2",
+                "Name": "EnforceAccountEC2Baseline",
+                "Description": "Enforce IMDSv2 as mandatory, and Block Public Access for AMI and EBS snapshots",
+                "Content": {
+                    "ec2_attributes": {
+                        "instance_metadata_defaults": {
+                            "http_tokens": {
+                                "@@assign": "required"
+                            },
+                            "http_put_response_hop_limit": {
+                                "@@assign": -1
+                            },
+                            "http_endpoint": {
+                                "@@assign": "no_preference"
+                            },
+                            "instance_metadata_tags": {
+                                "@@assign": "no_preference"
+                            }
+                        },
+                        "image_block_public_access": {
+                            "state": {
+                                "@@assign": "block_new_sharing"
+                            }
+                        },
+                        "snapshot_block_public_access": {
+                            "state": {
+                                "@@assign": "block_all_sharing"
+                            }
+                        }
+                    }
+                },
+                "TargetIds": {
+                    "Ref": "TargetRootOrgIdforEC2Settings"
+                },
+                "Tags": [
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "BaselineGuardrailPolicyId": {
+            "Description": "ID of the created baseline Service Control Policy",
+            "Value": {
+                "Ref": "BaselineGuardrailPolicy"
+            }
+        },
+        "BaselineGuardrailPolicyArn": {
+            "Description": "ARN of the created baseline Service Control Policy",
+            "Value": {
+                "Fn::GetAtt": [
+                    "BaselineGuardrailPolicy",
+                    "Arn"
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudFormation template to create StackSet Administrator and Execution roles"
+
+Parameters:
+  OrganizationId:
+    Type: String
+    Description: AWS Organization ID (format o-XXXX)
+
+Resources:
+  # Administrator Role - CloudFormation assumes this role to create stack instances
+  AdministrationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AWSCloudFormationStackSetAdministrationRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CFAdminRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "sts:AssumeRole"
+                Resource:
+                  - "*"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  # Execution Role - The Administrator role assumes this role to create resources
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AWSCloudFormationStackSetExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt AdministrationRole.Arn
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudFormationExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "sts:AssumeRole"
+                  - "securityhub:EnableOrganizationAdminAccount"
+                  - "logs:DescribeLogGroups"
+                  - "logs:DeleteLogGroup"
+                  - "securityhub:DisableOrganizationAdminAccount"
+                  - "logs:CreateLogGroup"
+                  - "logs:DeleteLogStream"
+                  - "logs:PutRetentionPolicy"
+                  - "logs:DescribeIndexPolicies"
+                  - "logs:TagResource"
+                  - "cloudformation:DescribeStacks"
+                  - "cloudformation:ListStacks"
+                  - "logs:CreateLogStream"
+                  - "organizations:DescribeOrganization"
+                  - "organizations:EnableAWSServiceAccess"
+                  - "cloudformation:DescribeStackEvents"
+                  - "cloudformation:CreateStack"
+                  - "cloudformation:DescribeStacks"
+                  - "cloudformation:DeleteStack"
+                  - "cloudformation:UpdateStack"
+                  - "organizations:RegisterDelegatedAdministrator"
+                  - "organizations:DeregisterDelegatedAdministrator"
+                  - "organizations:EnableAWSServiceAccess"
+                  - "securityhub:ListOrganizationAdminAccounts"
+                  - "kms:Encrypt"
+                  - "kms:Decrypt"
+                  - "kms:DescribeKey"
+                  - "kms:CreateGrant"
+                  - "kms:TagResource"
+                  - "kms:CreateKey"
+                  - "kms:CreateAlias"
+                  - "kms:DeleteAlias"
+                  - "iam:GetRole"
+                  - "iam:ListRolePolicies"
+                  - "iam:DeleteRole"
+                  - "iam:CreateRole"
+                  - "iam:PutRolePolicy"
+                  - "iam:ListAttachedRolePolicies"
+                  - "iam:DeleteRolePolicy"
+                  - "iam:GetRolePolicy"
+                  - "iam:TagPolicy"
+                  - "iam:TagRole"
+                  - "lambda:GetRuntimeManagementConfig"
+                  - "lambda:GetFunctionRecursionConfig"
+                  - "lambda:GetFunctionCodeSigningConfig"
+                  - "lambda:GetFunction"
+                  - "lambda:CreateFunction"
+                  - "lambda:UpdateFunctionCode"
+                  - "lambda:DeleteFunction"
+                  - "lambda:InvokeFunction"
+                  - "lambda:TagResource"
+                  - "lambda:UntagResource"
+                  - "lambda:PutFunctionConcurrency"
+                Resource: "*"
+              - Effect: Allow
+                Action: "iam:PassRole"
+                Resource: 
+                  - "arn:aws:iam::*:role/*"
+                Condition:
+                  StringEquals:
+                    aws:PrincipalOrgID: !Ref OrganizationId
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+Outputs:
+  AdministrationRoleARN:
+    Description: Administration Role ARN
+    Value: !GetAtt AdministrationRole.Arn
+
+  ExecutionRoleARN:
+    Description: Execution Role ARN
+    Value: !GetAtt ExecutionRole.Arn

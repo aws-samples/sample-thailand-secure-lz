@@ -1,0 +1,292 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Enable (only) AWS Organization Trusted Access for AWS native security services Security Hub, GuardDuty, Inspector, Firewall Manager, Resource Access Manager, and IAM Access Analyzer at AWS Organization level. To disable the specific service, use AWS Organization Console."
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Lambda Function Configuration"
+        Parameters:
+          - LoggingLevel
+      - Label:
+          default: "AWS Organization Trusted Access Configuration"
+        Parameters:
+          - GuardDutyEnable
+          - InspectorEnable
+          - SecurityHubEnable
+          - DetectiveEnable
+          - FirewallManagerEnable
+          - IPAMEnable
+          - IAMAccessAnalyzerEnable
+          - IAMEnable
+          - CloudFormationEnable
+          - BackupEnable
+      - Label:
+          default: "Security Services Configuration"
+    ParameterLabels:
+      GuardDutyEnable:
+        default: "GuardDuty"
+      SecurityHubEnable:
+        default: "Security Hub"
+      DetectiveEnable:
+        default: "Detective"
+      InspectorEnable:
+        default: "Inspector"
+      FirewallManagerEnable:
+        default: "Firewall Manager"
+      IPAMEnable:
+        default: "IPAM"
+      IAMAccessAnalyzerEnable:
+        default: "IAM Access Analyzer"
+      IAMEnable:
+        default: "Identity Access Management"
+      CloudFormationEnable:
+        default: "CloudFormation"
+      BackupEnable:
+        default: "Backup"
+      LoggingLevel:
+        default: "Logging Level"
+
+Parameters:
+  GuardDutyEnable:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable GuardDuty to identify threats in the AWS environment."
+    Type: String
+  SecurityHubEnable:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable Security Hub for continuous compliance monitoring."
+    Type: String
+  DetectiveEnable:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable Detective for investigation of GuardDuty alerts."
+    Type: String
+  InspectorEnable:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable Inspector to scan for known vulnerabilities in EC2, Containers, and Lambda functions."
+    Type: String
+  FirewallManagerEnable:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable Firewall Manager for centralized network management."
+    Type: String
+  IPAMEnable:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable IPAM for centralized IP Address management."
+    Type: String
+  IAMAccessAnalyzerEnable:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable IAM Access Analyzer to identify unauthorized external sharing of resources."
+    Type: String
+  IAMEnable:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable IAM for centralized root management for organization."
+    Type: String
+  CloudFormationEnable:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable CloudFormation Stacks for across multiple accounts and regions."
+    Type: String
+  BackupEnable:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable automated Backup plans across multiple accounts and regions."
+    Type: String
+  RAM:
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "Enable Resource Access Manager for organization."
+    Type: String
+  LoggingLevel:
+    AllowedValues: ["CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING"]
+    Default: "INFO"
+    Description: "The logging level for the Lambda function."
+    Type: String
+  OrganizationKmsIam:
+    Default: "lz-organization-kms-iam"
+    Description: "Name of CloudFormation Stack that created Organization CloudWatch IAM and KMS-CMK"
+    Type: String
+
+Resources:
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Description: "Used by the Lambda to update the AWS native Security Services configuration."
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - "organizations:EnableAwsServiceAccess"
+                  - "organizations:DescribeOrganization"
+                  - "cloudformation:ActivateOrganizationsAccess"
+                  - "cloudformation:DescribeOrganizationsAccess"
+                  - "iam:GetRole"
+                  - "iam:CreateServiceLinkedRole"
+                  - "sts:GetCallerIdentity"
+                  - "ram:EnableSharingWithAwsOrganization"
+                Resource: "*"
+      RoleName: "organization-service-trusted-access-lambda"
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  OrganizationServiceTrustedAccessLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          import os
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(os.environ['LOGGING_LEVEL'])
+          organizations_client = boto3.client("organizations")
+          cloudformation_client = boto3.client("cloudformation")
+          ram_client = boto3.client("ram")
+          sts_client = boto3.client('sts')
+          account_id = sts_client.get_caller_identity()["Account"]
+          def lambda_handler(event, context):
+              logger.info(f"Received event: {event}")
+              physical_id = event['LogicalResourceId']
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      if event['ResourceProperties']['GuardDuty'] == 'true':
+                          set_trusted_access('guardduty.amazonaws.com')
+                          set_trusted_access('malware-protection.guardduty.amazonaws.com')
+                      
+                      if event['ResourceProperties']['SecurityHub'] == 'true':
+                          set_trusted_access('securityhub.amazonaws.com')
+
+                      if event['ResourceProperties']['Detective'] == 'true':
+                          set_trusted_access('detective.amazonaws.com')
+
+                      if event['ResourceProperties']['Inspector'] == 'true':
+                          set_trusted_access('inspector2.amazonaws.com')
+
+                      if event['ResourceProperties']['FirewallManager'] == 'true':
+                          set_trusted_access('fms.amazonaws.com') 
+
+                      if event['ResourceProperties']['IPAM'] == 'true':
+                          set_trusted_access('ipam.amazonaws.com')                              
+                                            
+                      if event['ResourceProperties']['IAMAccessAnalyzer'] == 'true':
+                          set_trusted_access('access-analyzer.amazonaws.com')
+
+                      if event['ResourceProperties']['IAM'] == 'true':
+                          set_trusted_access('iam.amazonaws.com')
+
+                      if event['ResourceProperties']['Backup'] == 'true':
+                          set_trusted_access('backup.amazonaws.com') 
+                      
+                      if event['ResourceProperties']['RAM'] == 'true':
+                          activate_organizations_access_ram()
+
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  elif event['RequestType'] == 'Delete':
+                      logger.info(f"Go to AWS Organization console to manually disable required services.")
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
+                  else:
+                      logger.error(f"Invalid request type: {event['RequestType']}")
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)
+          def set_trusted_access(service_principal):
+              try:
+                  organizations_client.enable_aws_service_access(ServicePrincipal = service_principal)
+                  logger.info(f"AWS Organization Service {service_principal} Trusted Access configuration updated successfully")
+              except ClientError as e:
+                  logger.error(f"Error updating AWS Organization Service {service_principal} Trusted Access configuration: {str(e)}")
+                  raise
+          def activate_organizations_access_cloudformation():
+              try:
+                  cloudformation_client.activate_organizations_access()
+                  logger.info("CloudFormation Activate Organization Access configuration updated successfully")
+              except ClientError as e:
+                  logger.error(f"Error updating CloudFormation Activate Organization Access configuration: {str(e)}")
+                  raise
+          def activate_organizations_access_ram():
+              try:
+                  ram_client.enable_sharing_with_aws_organization()
+                  logger.info("Resource Access Manager Activate Organization Access configuration updated successfully")
+              except ClientError as e:
+                  logger.error(f"Error updating Resource Access Manager Activate Organization Access configuration: {str(e)}")
+                  raise
+      Description: "Enable or disable AWS Organization Service Trusted Access configuration at organization level."
+      Environment:
+        Variables:
+          LOGGING_LEVEL: !Ref LoggingLevel
+      FunctionName: "organization-service-trusted-access"
+      Handler: index.lambda_handler
+      LoggingConfig:
+        LogGroup: !Ref OrganizationServiceTrustedAccessLambdaLogGroup
+      MemorySize: 128
+      PackageType: Zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 60
+      ReservedConcurrentExecutions: 1
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  OrganizationServiceTrustedAccessLambdaLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+      "KmsKeyId":
+        {
+          "Fn::Sub": "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/cloudwatch-logs-key",
+        }
+      Tags:
+        - Key: "CreatedBy"
+          Value: "SecureLandingZone"
+
+  OrganizationServiceTrustedAccess:
+    Type: "Custom::OrganizationServiceTrustedAccess"
+    Properties:
+      GuardDuty: !Ref GuardDutyEnable
+      SecurityHub: !Ref SecurityHubEnable
+      Inspector: !Ref InspectorEnable
+      Detective: !Ref DetectiveEnable
+      FirewallManager: !Ref FirewallManagerEnable
+      IPAM: !Ref IPAMEnable
+      IAMAccessAnalyzer: !Ref IAMAccessAnalyzerEnable
+      IAM: !Ref IAMEnable
+      CloudFormation: !Ref CloudFormationEnable
+      Backup: !Ref BackupEnable
+      RAM: !Ref RAM
+      ServiceToken: !GetAtt OrganizationServiceTrustedAccessLambda.Arn
+
+Outputs:
+  OrganizationServiceTrustedAccessLambda:
+    Description: Lambda function for setting AWS Organization Services Trusted Access configuration.
+    Value: !Ref OrganizationServiceTrustedAccessLambda

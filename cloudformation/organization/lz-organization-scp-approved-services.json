@@ -1,0 +1,223 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates Service Control Policy to allow only approved services",
+    "Parameters": {
+        "ApprovedServicesPolicyName": {
+            "Type": "String",
+            "Default": "th-slz-approved-services",
+            "Description": "Name of the approved services Service Control Policy"
+        },
+        "PolicyDescription": {
+            "Type": "String",
+            "Default": "SCP to allow only approved services in the home and global region",
+            "Description": "Description for the Service Control Policy"
+        },
+        "TargetOrganizationalUnitIds": {
+            "Type": "CommaDelimitedList",
+            "Description": "ID of the Organizational Unit to attach the policy (starts with 'ou-')"
+        }
+    },
+    "Resources": {
+        "ApprovedServicesPolicy": {
+            "Type": "AWS::Organizations::Policy",
+            "Properties": {
+                "Content": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {         
+                                    "Sid": "ApprovedServicesOnly",
+                                    "Effect": "Deny",
+                                    "NotAction": [
+                                        "acm:*",
+                                        "access-analyzer:*",
+                                        "amplify:*",
+                                        "amplifybackend:*",
+                                        "amplifyuibuilder:*",
+                                        "apigateway:*",
+                                        "application-autoscaling:*",
+                                        "appmesh:*",
+                                        "appstream:*",
+                                        "appsync:*",
+                                        "aps:*",
+                                        "athena:*",
+                                        "autoscaling:*",
+                                        "aws-portal:*",
+                                        "backup:*",
+                                        "backup-storage:*",
+                                        "batch:*",
+                                        "bedrock:*",
+                                        "budgets:*",
+                                        "clouddirectory:*",
+                                        "cloudformation:*",
+                                        "cloudfront:*",
+                                        "cloudhsm:*",
+                                        "cloudshell:*",
+                                        "cloudtrail:*",
+                                        "cloudwatch:*",
+                                        "codebuild:*",
+                                        "codecommit:*",
+                                        "codedeploy:*",
+                                        "codepipeline:*",
+                                        "cognito-identity:*",
+                                        "cognito-idp:*",
+                                        "cognito-sync:*",
+                                        "comprehend:*",
+                                        "compute-optimizer:*",
+                                        "config:*",
+                                        "connect:*",
+                                        "controltower:*",
+                                        "datasync:*",
+                                        "dax:*",
+                                        "detective:*",
+                                        "devicefarm:*",
+                                        "devops-guru:*",
+                                        "directconnect:*",
+                                        "dlm:*",
+                                        "dms:*",
+                                        "drs:*",
+                                        "ds:*",
+                                        "dynamodb:*",
+                                        "ec2:*",
+                                        "ec2-instance-connect:*",
+                                        "ec2messages:*",
+                                        "ecr:*",
+                                        "ecr-public:*",
+                                        "ecs:*",
+                                        "eks:*",
+                                        "elasticache:*",
+                                        "elasticbeanstalk:*",
+                                        "elasticfilesystem:*",
+                                        "elasticloadbalancing:*",
+                                        "elasticmapreduce:*",
+                                        "es:*",
+                                        "events:*",
+                                        "fis:*",
+                                        "firehose:*",
+                                        "fms:*",
+                                        "fsx:*",
+                                        "globalaccelerator:*",
+                                        "glacier:*",
+                                        "glue:*",
+                                        "guardduty:*",
+                                        "health:*",
+                                        "iam:*",
+                                        "imagebuilder:*",
+                                        "inspector:*",
+                                        "inspector2:*",
+                                        "kinesis:*",
+                                        "kms:*",
+                                        "lakeformation:*",
+                                        "lambda:*",
+                                        "license-manager:*",
+                                        "logs:*",
+                                        "macie2:*",
+                                        "mq:*",
+                                        "network-firewall:*",
+                                        "organizations:*",
+                                        "pi:*",
+                                        "quicksight:*",
+                                        "ram:*",
+                                        "rds:*",
+                                        "rds-data:*",
+                                        "rds-db:*",
+                                        "redshift:*",
+                                        "rekognition:*",
+                                        "resource-groups:*",
+                                        "resource-explorer:*",
+                                        "resource-explorer-2:*",
+                                        "route53:*",
+                                        "route53resolver:*",
+                                        "route53domains:*",
+                                        "route53-recovery-readiness:*",
+                                        "route53-recovery-control-config:*",
+                                        "s3:*",
+                                        "sagemaker:*",
+                                        "savingsplans:DescribeSavingsPlans",
+                                        "scheduler:*",
+                                        "secretsmanager:*",
+                                        "securityhub:*",
+                                        "serverlessrepo:*",
+                                        "servicecatalog:*",
+                                        "servicediscovery:*",
+                                        "servicequotas:*",
+                                        "ses:*",
+                                        "shield:*",
+                                        "sms:*",
+                                        "sns:*",
+                                        "sqs:*",
+                                        "ssm:*",
+                                        "ssm-incidents:*",
+                                        "ssm-guiconnect:*",
+                                        "ssmmessages:*",
+                                        "states:*",
+                                        "storagegateway:*",
+                                        "sts:DecodeAuthorizationMessage",
+                                        "support:*",
+                                        "swf:*",
+                                        "synthetics:*",
+                                        "tag:*",
+                                        "transfer:*",
+                                        "translate:*",
+                                        "trustedadvisor:*",
+                                        "waf:*",
+                                        "waf-regional:*",
+                                        "wafv2:*",
+                                        "wellarchitected:*",
+                                        "xray:*",
+                                        "sso:List*",
+                                        "sso:Get*",
+                                        "sso:Describe*",
+                                        "sts:AssumeRole"
+                                    ],
+                                    "Resource": "*",
+                                    "Condition": {
+                                        "ArnNotLike": {
+          "aws:PrincipalARN": [
+            "arn:aws:iam::*:role/AWSControlTowerExecution"
+          ]
+        }
+                                    }
+                                }
+                    ]
+                },
+                "Description": {
+                    "Ref": "PolicyDescription"
+                },
+                "Name": {
+                    "Ref": "ApprovedServicesPolicyName"
+                },
+                "Type": "SERVICE_CONTROL_POLICY",
+                "TargetIds": {
+                    "Ref": "TargetOrganizationalUnitIds"
+                },
+                "Tags": [
+                    {
+                        "Key": "Purpose",
+                        "Value": "Security Control"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "ApprovedServicesPolicyId": {
+            "Description": "ID of the created approved services Service Control Policy",
+            "Value": {
+                "Ref": "ApprovedServicesPolicy"
+            }
+        },
+        "ApprovedServicesPolicyArn": {
+            "Description": "ARN of the created approved services Service Control Policy",
+            "Value": {
+                "Fn::GetAtt": [
+                    "ApprovedServicesPolicy",
+                    "Arn"
+                ]
+            }
+        }
+    }
+}

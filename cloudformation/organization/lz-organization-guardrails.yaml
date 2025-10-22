@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Nested stack for Thailand SLZ guardrails - combines baseline Service Control Policy guardrails, approved services, and Resource Control policies"
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: Name of the S3 bucket containing the CloudFormation templates
+
+  S3KeyPrefix:
+    Type: String
+    Default: ""
+    Description: Optional S3 key prefix for the CloudFormation templates (include trailing slash if needed)
+
+  BaselineGuardrailPolicyName:
+    Type: String
+    Default: th-slz-guardrail
+    Description: Name of the baseline guardrail Service Control Policy
+
+  BaselineGuardrailPolicyDescription:
+    Type: String
+    Default: SCP to prevent account leaving organization and deny unauthorized IAM user creation across the organization
+    Description: Description for the baseline Service Control Policy
+
+  ApprovedServicesPolicyName:
+    Type: String
+    Default: th-slz-approved-services
+    Description: Name of the approved services Service Control Policy
+
+  ApprovedServicesPolicyDescription:
+    Type: String
+    Default: SCP to allow only approved services in the home and global region
+    Description: Description for the approved services Service Control Policy
+
+  BaselineResourceGuardrailPolicyName:
+    Type: String
+    Default: th-slz-resource-guardrail
+    Description: Name of the baseline guardrail Resource Control Policy
+
+  BaselineResourceGuardrailPolicyDescription:
+    Type: String
+    Default: RCP to ensure TLS connection for S3
+    Description: Description for the Resource Control Policy
+
+  TargetOrganizationalUnitIds:
+    Type: CommaDelimitedList
+    Description: ID of the Organizational Unit to attach the SCP and RCP policies (starts with 'ou-')
+
+Resources:
+  BaselineGuardrailsStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/${S3KeyPrefix}lz-organization-scp-guardrails.json
+      Parameters:
+        BaselineGuardrailPolicyName: !Ref BaselineGuardrailPolicyName
+        PolicyDescription: !Ref BaselineGuardrailPolicyDescription
+        TargetOrganizationalUnitIds:
+          !Join [",", !Ref TargetOrganizationalUnitIds]
+        TargetRootOrgIdforEC2Settings: !ImportValue "lz-organization-RootId"
+      TimeoutInMinutes: 30
+
+  ApprovedServicesStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: BaselineGuardrailsStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/${S3KeyPrefix}lz-organization-scp-approved-services.json
+      Parameters:
+        ApprovedServicesPolicyName: !Ref ApprovedServicesPolicyName
+        PolicyDescription: !Ref ApprovedServicesPolicyDescription
+        TargetOrganizationalUnitIds:
+          !Join [",", !Ref TargetOrganizationalUnitIds]
+      TimeoutInMinutes: 30
+
+  ResourceControlPoliciesStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: ApprovedServicesStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/${S3KeyPrefix}lz-organization-rcp-guardrails.json
+      Parameters:
+        BaselineResourceGuardrailPolicyName: !Ref BaselineResourceGuardrailPolicyName
+        PolicyDescription: !Ref BaselineResourceGuardrailPolicyDescription
+        OrganizationId: !ImportValue "lz-organization-OrganizationId"
+        TargetOrganizationalUnitIds:
+          !Join [",", !Ref TargetOrganizationalUnitIds]
+      TimeoutInMinutes: 30
+
+Outputs:
+  BaselineGuardrailPolicyId:
+    Description: ID of the created baseline Service Control Policy
+    Value: !GetAtt BaselineGuardrailsStack.Outputs.BaselineGuardrailPolicyId
+
+  BaselineGuardrailPolicyArn:
+    Description: ARN of the created baseline Service Control Policy
+    Value: !GetAtt BaselineGuardrailsStack.Outputs.BaselineGuardrailPolicyArn
+
+  ApprovedServicesPolicyId:
+    Description: ID of the created approved services Service Control Policy
+    Value: !GetAtt ApprovedServicesStack.Outputs.ApprovedServicesPolicyId
+
+  ApprovedServicesPolicyArn:
+    Description: ARN of the created approved services Service Control Policy
+    Value: !GetAtt ApprovedServicesStack.Outputs.ApprovedServicesPolicyArn
+
+  BaselineResourceGuardrailPolicyId:
+    Description: ID of the created baseline Resource Control Policy
+    Value: !GetAtt ResourceControlPoliciesStack.Outputs.BaselineResourceGuardrailPolicyId
+
+  BaselineResourceGuardrailPolicyArn:
+    Description: ARN of the created baseline Resource Control Policy
+    Value: !GetAtt ResourceControlPoliciesStack.Outputs.BaselineResourceGuardrailPolicyArn

@@ -1,0 +1,246 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Thailand SLZ - create required Organizational Units",
+    "Parameters": {
+        "OrganizationRootId": {
+            "Type": "String",
+            "Description": "The ID of the root (starts with 'r-')"
+        },
+        "WorkloadOUName": {
+            "Type": "String",
+            "Default": "Workloads",
+            "Description": "Name of the Organizational Unit",
+            "MinLength": 1,
+            "MaxLength": 128
+        },
+        "WorkloadProductionOUName": {
+            "Type": "String",
+            "Default": "Production",
+            "Description": "Name of the Production Organizational Unit",
+            "MinLength": 1,
+            "MaxLength": 128
+        },
+        "WorkloadNonProductionOUName": {
+            "Type": "String",
+            "Default": "NonProduction",
+            "Description": "Name of the Non-Production Organizational Unit",
+            "MinLength": 1,
+            "MaxLength": 128
+        },
+        "ForensicOUName": {
+            "Type": "String",
+            "Default": "Forensic",
+            "Description": "Name of the Forensic Organizational Unit",
+            "MinLength": 1,
+            "MaxLength": 128
+        },
+        "InfrastructureOUName": {
+            "Type": "String",
+            "Default": "Infrastructure",
+            "Description": "Name of the Infrastructure Organizational Unit",
+            "MinLength": 1,
+            "MaxLength": 128
+        },
+        "SandboxOUName": {
+            "Type": "String",
+            "Default": "Sandbox",
+            "Description": "Name of the Sandbox Organizational Unit",
+            "MinLength": 1,
+            "MaxLength": 128
+        },
+        "SuspendedOUName": {
+            "Type": "String",
+            "Default": "Suspended",
+            "Description": "Name of the Suspended Organizational Unit",
+            "MinLength": 1,
+            "MaxLength": 128
+        }
+    },
+    "Resources": {
+        "WorkloadOrganizationalUnit": {
+            "Type": "AWS::Organizations::OrganizationalUnit",
+            "Properties": {
+                "Name": {
+                    "Ref": "WorkloadOUName"
+                },
+                "ParentId": {
+                    "Ref": "OrganizationRootId"
+                },
+                "Tags": [
+                    {
+                        "Key": "Environment",
+                        "Value": "Production"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "WorkloadProductionOrganizationalUnit": {
+            "Type": "AWS::Organizations::OrganizationalUnit",
+            "Properties": {
+                "Name": {
+                    "Ref": "WorkloadProductionOUName"
+                },
+                "ParentId": {
+                    "Ref": "WorkloadOrganizationalUnit"
+                },
+                "Tags": [
+                    {
+                        "Key": "Environment",
+                        "Value": "Production"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "WorkloadNonProductionOrganizationalUnit": {
+            "Type": "AWS::Organizations::OrganizationalUnit",
+            "Properties": {
+                "Name": {
+                    "Ref": "WorkloadNonProductionOUName"
+                },
+                "ParentId": {
+                    "Ref": "WorkloadOrganizationalUnit"
+                },
+                "Tags": [
+                    {
+                        "Key": "Environment",
+                        "Value": "NonProduction"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "InfrastructureOrganizationalUnit": {
+            "Type": "AWS::Organizations::OrganizationalUnit",
+            "Properties": {
+                "Name": {
+                    "Ref": "InfrastructureOUName"
+                },
+                "ParentId": {
+                    "Ref": "OrganizationRootId"
+                },
+                "Tags": [
+                    {
+                        "Key": "Environment",
+                        "Value": "Production"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "ForensicOrganizationalUnit": {
+            "Type": "AWS::Organizations::OrganizationalUnit",
+            "Properties": {
+                "Name": {
+                    "Ref": "ForensicOUName"
+                },
+                "ParentId": {
+                    "Ref": "OrganizationRootId"
+                },
+                "Tags": [
+                    {
+                        "Key": "Environment",
+                        "Value": "Production"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "SandboxOrganizationalUnit": {
+            "Type": "AWS::Organizations::OrganizationalUnit",
+            "Properties": {
+                "Name": {
+                    "Ref": "SandboxOUName"
+                },
+                "ParentId": {
+                    "Ref": "OrganizationRootId"
+                },
+                "Tags": [
+                    {
+                        "Key": "Environment",
+                        "Value": "Sandbox"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        },
+        "SuspendedOrganizationalUnit": {
+            "Type": "AWS::Organizations::OrganizationalUnit",
+            "Properties": {
+                "Name": {
+                    "Ref": "SuspendedOUName"
+                },
+                "ParentId": {
+                    "Ref": "OrganizationRootId"
+                },
+                "Tags": [
+                    {
+                        "Key": "Environment",
+                        "Value": "Suspended"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "WorkloadOrganizationalUnitId": {
+            "Description": "The ID of the created Workload OU",
+            "Value": {
+                "Ref": "WorkloadOrganizationalUnit"
+            }
+        },
+        "WorkloadOrganizationalUnitArn": {
+            "Description": "The ARN of the created Workload OU",
+            "Value": {
+                "Fn::GetAtt": ["WorkloadOrganizationalUnit", "Arn"]
+            }
+        },
+        "ForensicOrganizationalUnitId": {
+            "Description": "The ID of the created Forensic OU",
+            "Value": {
+                "Ref": "ForensicOrganizationalUnit"
+            }
+        },
+        "ForensicOrganizationalUnitArn": {
+            "Description": "The ARN of the created Forensic OU",
+            "Value": {
+                "Fn::GetAtt": ["ForensicOrganizationalUnit", "Arn"]
+            }
+        },
+        "InfrastructureOrganizationalUnitId": {
+            "Description": "The ID of the created Infrastructure OU",
+            "Value": {
+                "Ref": "InfrastructureOrganizationalUnit"
+            }
+        },
+        "InfrastructureOrganizationalUnitArn": {
+            "Description": "The ARN of the created Infrastructure OU",
+            "Value": {
+                "Fn::GetAtt": ["InfrastructureOrganizationalUnit", "Arn"]
+            }
+        }
+    }
+}
