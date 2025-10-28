@@ -51,7 +51,7 @@ The Secure Landing Zone (SLZ) provides a secure cloud foundation for Thai govern
 10. Forensics: OU
 
 ## Pricing Estimate
-Will be added
+Refer to this [Malaysia SLZ cost estimate report](/cloudformation/thailand_slz_cost_estimation_simple.md) to guide you on the pricing considerations in the running the Malaysia SLZ.
 
 ## Security
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
