@@ -23,7 +23,7 @@ The Secure Landing Zone (SLZ) provides a secure cloud foundation for Thai govern
     - Vulnerability Patch Management: Amazon Inspector, with SSM Patch Manager Security Baseline
     - AWS Firewall Manager: centralized network configuration management for security groups, and WAF by policy enforcement
     - BACKLOG: Amazon Detective (pending availability in region)
-4. IAM: Control Towwer AWS IAM Identity Center with identity federation to organization's Identity Provider (IdP). 
+4. IAM: Control Tower AWS IAM Identity Center with identity federation to organization's Identity Provider (IdP). 
     - IAM Access Analyzer with Zone of Trust to "Organization" 
     - Organization Central Root management
 5. Network: central network account, with ANFW and Amazon Route 53 DNS Firewall, TGW and centralized VPC endpoints
