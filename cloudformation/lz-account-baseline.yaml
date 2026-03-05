@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Thailand SLZ Account Baseline - Combines EC2 security settings and S3 Block Public Access configuration"
+Description: "Thailand SLZ Account Baseline - Combines EC2 security settings, SSM Session Manager and S3 Block Public Access configuration"
 
 Metadata:
   AWS::CloudFormation::Interface:

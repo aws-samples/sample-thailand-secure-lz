@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Set delegated administration account for AWS Firewall Manager and IPAM. Deploy only in us-east-1, because Firewall Manager is a global service."
+Description: "Set delegated administration account for AWS IP Address Manager. Deploy only in us-east-1, because Firewall Manager is a global service."
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -9,20 +9,11 @@ Metadata:
         Parameters:
           - LoggingLevel
       - Label:
-          default: "AWS Native Security Services Configuration"
-        Parameters:
-          - DelegatedSecurityAdminAccount
-          - FirewallManager
-      - Label:
           default: "AWS Network Services Configuration"
           Parameters:
             - DelegatedIPAMAdminAccount
             - IPAMManager
     ParameterLabels:
-      DelegatedSecurityAdminAccount:
-        default: "Fill in Security Audit Admin Account"
-      FirewallManager:
-        default: "FirewallManager"
       DelegatedIPAMAdminAccount:
         default: "Fill in Network Account"
       IPAMManager:
@@ -31,11 +22,6 @@ Metadata:
         default: "Logging Level"
 
 Parameters:
-  DelegatedSecurityAdminAccount:
-    Type: String
-    Description: "AWS Account ID to be designated as Firewall Manager administrator (12-digit)"
-    AllowedPattern: "^[0-9]{12}$"
-    ConstraintDescription: "Must be a 12-digit numeric string"
   DelegatedIPAMAdminAccount:
     Type: String
     Description: "AWS Account ID to be designated as IPAM administrator (12-digit)- Network Account"
@@ -44,11 +30,6 @@ Parameters:
   KeyAdministratorArn:
     Type: String
     Description: "ARN of IAM user/role that will administer the KMS keys"
-  FirewallManager:
-    AllowedValues: ["true", "false"]
-    Default: "true"
-    Description: "Enable Firewall Manager for central management of network security policies."
-    Type: String
   IPAMManager:
     AllowedValues: ["true", "false"]
     Default: "true"
@@ -145,21 +126,15 @@ Resources:
           def lambda_handler(event, context):
               logger.info(f"Received event: {event}")
               physical_id = event['LogicalResourceId']
-              delegated_admin_account_id = event['ResourceProperties']['DelegatedSecurityAdminAccount']
               delegated_ipam_account_id = event['ResourceProperties']['DelegatedIPAMAdminAccount']
               try:
                   if event['RequestType'] in ['Create', 'Update']:
-                      if event['ResourceProperties']['FirewallManager'] == 'true':
-                          set_firewallmanager_organization_admin(delegated_admin_account_id)
-                      elif event['ResourceProperties']['FirewallManager'] == 'false':
-                          reset_firewallmanager_organization_admin()
                       if event['ResourceProperties']['IPAMManager'] == 'true':
                           set_ipam_organization_admin(delegated_ipam_account_id)
                       elif event['ResourceProperties']['IPAMManager'] == 'false':
                           reset_ipam_organization_admin(delegated_ipam_account_id)  
                       cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
                   elif event['RequestType'] == 'Delete':
-                      reset_firewallmanager_organization_admin()
                       reset_ipam_organization_admin(delegated_ipam_account_id)
                       cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
                   else:
@@ -168,24 +143,6 @@ Resources:
               except Exception as e:
                   logger.error(f"Error: {str(e)}")
                   cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id)              
-          def set_firewallmanager_organization_admin(account_id):
-              try:
-                  organizations_client.enable_aws_service_access(ServicePrincipal='fms.amazonaws.com')
-                  fms_client.associate_admin_account(AdminAccount=account_id)
-                  logger.info("Firewall Manager delegated security admin account updated successfully")
-              except ClientError as e:
-                  if 'account is already enabled' in e.response['Error']['Message'].lower() :
-                      logger.info(f"Firewall Manager delegated security admin account {account_id} is already a delegated administrator for your organization. {str(e)}")
-                  else:
-                      logger.error(f"Error updating Firewall Manager delegated security admin account configuration: {str(e)}")
-                      raise
-          def reset_firewallmanager_organization_admin():
-              try:
-                  fms_client.disassociate_admin_account()
-                  logger.info("Firewall Manager delegated security admin account reset successfully")
-              except ClientError as e:
-                  logger.error(f"Error resetting Firewall Manager delegated security admin account configuration: {str(e)}")
-                  raise
           def set_ipam_organization_admin(account_id):
               try:
                   organizations_client.enable_aws_service_access(ServicePrincipal='ipam.amazonaws.com')
@@ -205,7 +162,7 @@ Resources:
                   logger.error(f"Error resetting IPAM delegated admin account configuration: {str(e)}")
                   raise
 
-      Description: "Updates and deletes the AWS Firewall Manager admin delegation configuration at organization level in a region."
+      Description: "Updates and deletes the AWS IP Address Manager admin delegation configuration at organization level in a region."
       Environment:
         Variables:
           LOGGING_LEVEL: !Ref LoggingLevel
@@ -293,9 +250,7 @@ Resources:
   AdminDelegation:
     Type: "Custom::AdminDelegation"
     Properties:
-      FirewallManager: !Ref FirewallManager
       IPAMManager: !Ref IPAMManager
-      DelegatedSecurityAdminAccount: !Ref DelegatedSecurityAdminAccount
       DelegatedIPAMAdminAccount: !Ref DelegatedIPAMAdminAccount
       ServiceToken: !GetAtt AdminDelegationLambda.Arn
 

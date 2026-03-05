@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Nested stack for Thailand SLZ guardrails - combines baseline Service Control Policy guardrails, approved services, and Resource Control policies"
+Description: "Nested stack for Malaysia SLZ guardrails - combines baseline Service Control Policy guardrails, approved services, AI services optout and Resource Control policies"
 
 Parameters:
   S3BucketName:
@@ -38,8 +38,18 @@ Parameters:
 
   BaselineResourceGuardrailPolicyDescription:
     Type: String
-    Default: RCP to ensure TLS connection for S3
+    Default: RCP to ensure TLS connection for S3 and enforce confused deputy protection
     Description: Description for the Resource Control Policy
+
+  AIServicesOptOutPolicyName:
+    Type: String
+    Default: th-slz-ai-optout
+    Description: Name of the AI Services Opt-out Policy
+
+  AIServicesOptOutPolicyDescription:
+    Type: String
+    Default: AI Services Opt-out Policy
+    Description: Description for the AI Services Opt-out Policy
 
   TargetOrganizationalUnitIds:
     Type: CommaDelimitedList
@@ -81,6 +91,17 @@ Resources:
         OrganizationId: !ImportValue "lz-organization-OrganizationId"
         TargetOrganizationalUnitIds:
           !Join [",", !Ref TargetOrganizationalUnitIds]
+      TimeoutInMinutes: 30
+
+  AIServicesOptOutStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: ResourceControlPoliciesStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/${S3KeyPrefix}lz-organization-ai-optout.json
+      Parameters:
+        AIServicesOptOutPolicyName: !Ref AIServicesOptOutPolicyName
+        PolicyDescription: !Ref AIServicesOptOutPolicyDescription
+        TargetRootOrgIdforAIServicesPolicy: !ImportValue "lz-organization-RootId"
       TimeoutInMinutes: 30
 
 Outputs:

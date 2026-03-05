@@ -54,6 +54,13 @@
             "Description": "Name of the Suspended Organizational Unit",
             "MinLength": 1,
             "MaxLength": 128
+        },
+        "SecurityOUName": {
+            "Type": "String",
+            "Default": "Security",
+            "Description": "Name of the Security Organizational Unit",
+            "MinLength": 1,
+            "MaxLength": 128
         }
     },
     "Resources": {
@@ -203,6 +210,27 @@
                     }
                 ]
             }
+        },
+        "SecurityOrganizationalUnit": {
+            "Type": "AWS::Organizations::OrganizationalUnit",
+            "Properties": {
+                "Name": {
+                    "Ref": "SecurityOUName"
+                },
+                "ParentId": {
+                    "Ref": "OrganizationRootId"
+                },
+                "Tags": [
+                    {
+                        "Key": "Environment",
+                        "Value": "Production"
+                    },
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
         }
     },
     "Outputs": {
@@ -240,6 +268,18 @@
             "Description": "The ARN of the created Infrastructure OU",
             "Value": {
                 "Fn::GetAtt": ["InfrastructureOrganizationalUnit", "Arn"]
+            }
+        },
+        "SecurityOrganizationalUnitId": {
+            "Description": "The ID of the created Security OU",
+            "Value": {
+                "Ref": "SecurityOrganizationalUnit"
+            }
+        },
+        "SecurityOrganizationalUnitArn": {
+            "Description": "The ARN of the created Security OU",
+            "Value": {
+                "Fn::GetAtt": ["SecurityOrganizationalUnit", "Arn"]
             }
         }
     }

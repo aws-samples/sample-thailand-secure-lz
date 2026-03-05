@@ -1,15 +1,15 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
-    "Description": "Creates baseline guardrail Resource Control Policy for S3 and Confused Deputy Protection",
+    "Description": "Creates baseline guardrail Resource Control Policy for S3, STS, SQS, KMS, Secrets Manager, and Confused Deputy Protection",
     "Parameters": {
         "BaselineResourceGuardrailPolicyName": {
             "Type": "String",
-            "Default": "th-lza-resource-guardrail",
+            "Default": "th-slz-resource-guardrail",
             "Description": "Name of the baseline guardrail Resource Control Policy"
         },
         "PolicyDescription": {
             "Type": "String",
-            "Default": "RCP to ensure TLS connection for S3",
+            "Default": "RCP for S3 TLS enforcement, STS, SQS, KMS, and Secrets Manager organization access, and Confused Deputy Protection",
             "Description": "Description for the Resource Control Policy"
         },
         "OrganizationId": {
@@ -61,6 +61,77 @@
                                     "s3:TlsVersion": [
                                         "1.2"
                                     ]
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "RCPEnforceSTSOrganizationAccess",
+                            "Effect": "Deny",
+                            "Principal": "*",
+                            "Action": [
+                                "sts:AssumeRole",
+                                "sts:SetContext"
+                            ],
+                            "Resource": "*",
+                            "Condition": {
+                                "BoolIfExists": {
+                                    "aws:PrincipalIsAWSService": "false"
+                                },
+                                "StringNotEqualsIfExists": {
+                                    "aws:PrincipalOrgID": {
+                                        "Ref": "OrganizationId"
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "RCPEnforceSQSOrganizationAccess",
+                            "Effect": "Deny",
+                            "Principal": "*",
+                            "Action": "sqs:*",
+                            "Resource": "*",
+                            "Condition": {
+                                "BoolIfExists": {
+                                    "aws:PrincipalIsAWSService": "false"
+                                },
+                                "StringNotEqualsIfExists": {
+                                    "aws:PrincipalOrgID": {
+                                        "Ref": "OrganizationId"
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "RCPEnforceKMSOrganizationAccess",
+                            "Effect": "Deny",
+                            "Principal": "*",
+                            "Action": "kms:*",
+                            "Resource": "*",
+                            "Condition": {
+                                "BoolIfExists": {
+                                    "aws:PrincipalIsAWSService": "false"
+                                },
+                                "StringNotEqualsIfExists": {
+                                    "aws:PrincipalOrgID": {
+                                        "Ref": "OrganizationId"
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "RCPEnforceSecretsManagerOrganizationAccess",
+                            "Effect": "Deny",
+                            "Principal": "*",
+                            "Action": "secretsmanager:*",
+                            "Resource": "*",
+                            "Condition": {
+                                "BoolIfExists": {
+                                    "aws:PrincipalIsAWSService": "false"
+                                },
+                                "StringNotEqualsIfExists": {
+                                    "aws:PrincipalOrgID": {
+                                        "Ref": "OrganizationId"
+                                    }
                                 }
                             }
                         }

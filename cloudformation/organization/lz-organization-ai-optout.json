@@ -1,0 +1,72 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates AI Opt-Out Policy use of content for AWS service improvement",
+    "Parameters": {
+        "AIServicesOptOutPolicyName": {
+            "Type": "String",
+            "Default": "th-slz-ai-optout",
+            "Description": "Name of the AI Services Opt-out Policy"
+        },
+        "PolicyDescription": {
+            "Type": "String",
+            "Default": "Organization management policy to opt out use of content for AWS service improvement",
+            "Description": "Description for the AI Services Opt-out Policy"
+        },
+        "TargetRootOrgIdforAIServicesPolicy": {
+            "Type": "CommaDelimitedList",
+            "Description": "ID of the Root Organization to attach the AI Services Opt Out policy (starts with 'r-')"
+        }
+    },
+    "Resources": {
+        "AIServiceOptOutPolicy": {
+            "DeletionPolicy": "Retain",
+            "Type": "AWS::Organizations::Policy",
+            "Properties": {
+                "Type": "AISERVICES_OPT_OUT_POLICY",
+                "Name": {
+                    "Ref": "AIServicesOptOutPolicyName"
+                },
+                "Description": {
+                    "Ref": "PolicyDescription"
+                },
+                "Content": {
+    "services": {
+        "default": {
+            "@@operators_allowed_for_child_policies": ["@@none"],
+            "opt_out_policy": {
+                "@@operators_allowed_for_child_policies": ["@@none"],
+                "@@assign": "optOut"
+            }
+        }
+    }
+                },
+                "TargetIds": {
+                    "Ref": "TargetRootOrgIdforAIServicesPolicy"
+                },
+                "Tags": [
+                    {
+                        "Key": "CreatedBy",
+                        "Value": "SecureLandingZone"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "AIServiceOptOutPolicy": {
+            "Description": "ID of the created AI Service Opt Out Policy",
+            "Value": {
+                "Ref": "AIServiceOptOutPolicy"
+            }
+        },
+        "AIServiceOptOutPolicyArn": {
+            "Description": "ARN of the created AI Service Opt Out Policy",
+            "Value": {
+                "Fn::GetAtt": [
+                    "AIServiceOptOutPolicy",
+                    "Arn"
+                ]
+            }
+        }
+    }
+}
