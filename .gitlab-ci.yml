@@ -1,4 +1,3 @@
-
 stages:
   - security-scan
   - publish
@@ -6,6 +5,8 @@ stages:
 variables:
   GITHUB_REPO: "https://x-access-token:${GITHUB_TOKEN}@github.com/aws-samples/sample-thailand-secure-lz.git"
   TARGET_BRANCH: "main"
+  GIT_DEPTH: 0
+  GIT_STRATEGY: clone
 
 # ─────────────────────────────────────────────
 # Stage 1: Secret Scanning (mandatory before push)
@@ -35,10 +36,11 @@ publish-to-github:
     - secret-scan
   before_script:
     - apk add --no-cache git
-    - git config --global user.email "krisadau@amazon.com"
-    - git config --global user.name "krisada uthayopas"
+    - git config --global user.email "kuokk@amazon.com"
+    - git config --global user.name "Kim Kuok Chiang"
     - git remote add github "${GITHUB_REPO}" || git remote set-url github "${GITHUB_REPO}"
   script:
+    - git fetch --unshallow || true
     - echo "Pushing to GitHub aws-samples/sample-thailand-secure-lz..."
     - git push github HEAD:${TARGET_BRANCH} --force
     - echo "Successfully published to GitHub!"
@@ -48,4 +50,3 @@ publish-to-github:
   environment:
     name: github-aws-samples
     url: https://github.com/aws-samples/sample-thailand-secure-lz
-
