@@ -2,7 +2,7 @@
 
 The Secure Landing Zone (SLZ) is for Thailand public sector ministries, agencies (customers) and partners to deploy "Secure by Default" guardrails for their AWS multi-account landing zone. National Cyber Security Agency of Thailand (NCSA) cloud security requirements (where applicable) are transposed into configurable infrastructure as code (IaC) scripts. These scripts help customers and partners to accelerate their implementation at the early foundation stages of implementation.
 
-![Thailand Landing Zone Architecture](/cloudformation/images/malaysia-lza-presentation-lza.drawio.png)
+![Thailand Landing Zone Architecture](/cloudformation/images/lza.drawio.png)
 
 ## Technical requirements mapping to NCSA Cybersecurity Standards for Cloud Services
 
@@ -112,7 +112,7 @@ Key Policy
     ]
 }
 ```
-4. Enable AWS Config in your home region Malaysia ap-southeast-5. If this your first time setting this up, you can use the **"1-Click Setup"** to enable the service.
+4. Enable AWS Config in your home region Thailand ap-southeast-7. If this your first time setting this up, you can use the **"1-Click Setup"** to enable the service.
 
 ## Deployment Steps
 1. Identify the AWS Organization identifer (format r-XXXXXX) from the AWS Organization console of the management account. This is an input parameter to the CloudFormation script "lz-organization-setup.yaml".
@@ -152,7 +152,7 @@ Key Policy
         - Create a new log-archive account as part of Control Tower implementation. 
         - Specify the KMS key id (alias "control-tower-key") for Control Tower encryption for the new log-archive account.
         - Set Log configuration for S3 to 1 year for both S3 retention and S3 access logging.
-    - Select **"AWS Control Tower sets up AWS account access with IAM Identity Center"** in Malaysia ap-southeast-5 region. You will receive an email invitation from AWS (no-reply@login.awsapps.com), on starting the creation of Control Tower landing zone. Take note of the AWS access portal URL provided in the email for your organization users to login across the accounts.
+    - Select **"AWS Control Tower sets up AWS account access with IAM Identity Center"** in Thailand ap-southeast-7 region. You will receive an email invitation from AWS (no-reply@login.awsapps.com), on starting the creation of Control Tower landing zone. Take note of the AWS access portal URL provided in the email for your organization users to login across the accounts.
     - Enable AWS Backup for whole of organization. Specify the new Shared Services (for backup administration) and central backup accounts. These accounts should not be enrolled under AWS Control Tower at the start.
         - Specify the KMS key id for Control Tower Backup encryption (alias "control-tower-backup-key")
 
@@ -182,7 +182,7 @@ Key Policy
     - Specify Regions: ap-southeast-7, us-east-1  
     - Leave other options as default        
 
-8. Configure AWS Organization wide policies for your Malaysia Secure Landing Zone
+8. Configure AWS Organization wide policies for your Thailand Secure Landing Zone
     - Deployment Account: management account
     - Enable **Resource Control Policies**. Go to AWS Organizations --> Policies, and enable "Resource Control Policies".
     - Enable **Declarative Policies for EC2**. Go to AWS Organizations --> Policies, and enable "Declarative Policies for EC2".
