@@ -2,7 +2,7 @@
 
 The Secure Landing Zone (SLZ) is for Thailand public sector ministries, agencies (customers) and partners to deploy "Secure by Default" guardrails for their AWS multi-account landing zone. National Cyber Security Agency of Thailand (NCSA) cloud security requirements (where applicable) are transposed into configurable infrastructure as code (IaC) scripts. These scripts help customers and partners to accelerate their implementation at the early foundation stages of implementation.
 
-![Thailand Landing Zone Architecture](/cloudformation/images/lza.drawio.png)
+![Thailand Landing Zone Architecture](/cloudformation/image/lza.drawio.png)
 
 ## Technical requirements mapping to NCSA Cybersecurity Standards for Cloud Services
 
