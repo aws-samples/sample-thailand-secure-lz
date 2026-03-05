@@ -36,8 +36,8 @@ publish-to-github:
     - secret-scan
   before_script:
     - apk add --no-cache git
-    - git config --global user.email "kuokk@amazon.com"
-    - git config --global user.name "Kim Kuok Chiang"
+    - git config --global user.email "krisadau@amazon.co.th"
+    - git config --global user.name "Krisada Uthayopas"
     - git remote add github "${GITHUB_REPO}" || git remote set-url github "${GITHUB_REPO}"
   script:
     - git fetch --unshallow || true
