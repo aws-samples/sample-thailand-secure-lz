@@ -139,7 +139,7 @@ Key Policy
     - Deployment Region: Thailand ap-southeast-7
     - Setup preference: "I want to setup a full environment"
     - Additional region for governance (for global services such as IAM, CloudFront, Route53): us-east-1
-    - Enable region deny control, to only govern these regions (us-east-1, and ap-southeast-5)
+    - Enable region deny control, to only govern these regions (us-east-1, and ap-southeast-7)
     - Enable automatic account enrollment.
     - Default OU for service integrations: Security OU
     - AWS Config for detective controls:
@@ -158,7 +158,7 @@ Key Policy
 
 6. Configure essential **AWS Security Services GuardDuty, Security Hub, Security Hub CSPM and Inspector** using AWS Organization Policy and enable the delegation of administrator of these services to the security audit account.
     - Deployment Account: management account
-    - Deployment Region: ap-southeast-5
+    - Deployment Region: ap-southeast-7
     - Go to **Security Hub** --> "Get Started"
         - Specify delegation of administrator to the security audit account.
         - Check the box to enable trusted access for the delegated administrator
@@ -333,7 +333,7 @@ Key Policy
 ## Configure AWS Security Services
 1. Login to the **Audit** account which is delegated security administrator for the Control Tower landing zone.
 
-2. Enable **Security Hub** in Audit account in the home region ap-southeast-5 which will enable security management, threat analytics from GuardDuty, posture management from Security Hub CSPM and vulnerability management from Inspector.
+2. Enable **Security Hub** in Audit account in the home region ap-southeast-7 which will enable security management, threat analytics from GuardDuty, posture management from Security Hub CSPM and vulnerability management from Inspector.
     - Configure Security Hub for the organization
     - Name: "securityhub-organization-policy"
     - Security Capabilities: enable all capabilities. This will automatically enable GuardDuty, Security Hub CSPM, and Inspector across all the accounts in scope.
@@ -345,11 +345,11 @@ Key Policy
     - Security Hub CSPM --> Settings --> Regions
         - Enable Cross-Region aggregation.
         - Choose Home Region: us-east-1
-        - Choose Linked Regions: ap-southeast-5
+        - Choose Linked Regions: ap-southeast-7 and other governed regions
     - Security Hub CSPM --> Settings --> Configuration
         - Select "Start central configuration"
         - Choose Home Region: us-east-1
-        - Choose Linked Regions: ap-southeast-5 
+        - Choose Linked Regions: ap-southeast-7 and other governed regions
         - Select "Configuration type" as "Customize my Security Hub Configuration". 
         - Select "Custom policy" to "Enable Security Hub CSPM", with "AWS Foundational Security Best Practices v1.0.0" selected as the security standard. 
         - Select "Disable specific control", to remove Security Hub findings that are no longer required. (Security Hub --> Controls)
