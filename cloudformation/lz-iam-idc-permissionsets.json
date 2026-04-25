@@ -77,9 +77,9 @@
                 "ManagedPolicies": [
                     "arn:aws:iam::aws:policy/ReadOnlyAccess",
                     "arn:aws:iam::aws:policy/AWSSecurityHubFullAccess",
-                    "arn:aws:iam::aws:policy/AmazonGuardDutyFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonGuardDutyFullAccess_v2",
                     "arn:aws:iam::aws:policy/AmazonDetectiveFullAccess",
-                    "arn:aws:iam::aws:policy/AmazonInspector2FullAccess",
+                    "arn:aws:iam::aws:policy/AmazonInspector2FullAccess_v2",
                     "arn:aws:iam::aws:policy/AWSWAFConsoleFullAccess",
                     "arn:aws:iam::aws:policy/AmazonAthenaFullAccess"
                 ],
