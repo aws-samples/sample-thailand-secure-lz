@@ -73,17 +73,17 @@ Use the template as a starting point and adjust service quantities to match your
 ### Cost Calculation — SLZ Setup Only (8 Core Accounts, No Workloads)
 | Service | Unit Pricing (ap-southeast-7) | Calculation | Monthly Cost |
 |---------|-------------------------------|-------------|-------------|
-| AWS Network Firewall (endpoints) | $0.66 per endpoint-hour | 3 AZ endpoints × $0.66 × 730 hrs | $1,445.40 |
+| AWS Network Firewall (endpoints) | $0.66 per endpoint-hour | 3 AZ endpoints × $0.66 × 730 hrs | $1,510.40 |
 | AWS Network Firewall (data processing) | $0.065 per GB | ~50 GB idle traffic × $0.065 | $3.25 |
 | VPC Interface Endpoints | $0.0117 per endpoint-AZ-hour | 8 services × 3 AZs × $0.0117 × 730 hrs | $204.98 |
 | VPC Interface Endpoints (data) | $0.01 per GB (first 1 PB) | ~50 GB × $0.01 | $0.50 |
 | NAT Gateways | $0.05015 per hour + $0.05015 per GB | 3 × $0.05015 × 730 hrs + ~20 GB | $110.83 |
-| AWS Transit Gateway | $0.06 per attachment-hour + $0.02 per GB | 2 attachments × $0.06 × 730 hrs + ~50 GB | $88.60 |
+| AWS Transit Gateway | $0.06 per attachment-hour + $0.02 per GB | 2 attachments × $0.06 × 730 hrs + ~50 GB | $168.30 |
 | Public IPv4 Addresses | $0.005 per hour | 3 NAT gateway EIPs × $0.005 × 730 hrs | $10.95 |
 | AWS KMS | $1.00 per key per month + $0.03 per 10K requests | ~40 customer managed keys + requests | $41.00 |
-| AWS Security Hub (CSPM) | $0.001 per check (first 100K) + $0.00003 per ingested finding (first 10K free) | ~25,000 checks + ingestion, 8 accounts × 2 regions | $27.00 |
-| AWS Config | $0.003 per configuration item + $0.001 per rule evaluation | ~4,000 items + evaluations, 16 account-regions | $15.00 |
-| Amazon GuardDuty | $3.91 per 1M CloudTrail events; $0.9775 per GB flow/DNS logs (first 500 GB) | ~3M events + minimal flow/DNS logs | $15.00 |
+| AWS Security Hub (CSPM) | $0.001 per check (first 100K) + $0.00003 per ingested finding (first 10K free) | ~25,000 checks + ingestion, 8 accounts × 2 regions | $10.40 |
+| AWS Config | $0.003 per configuration item + $0.001 per rule evaluation | ~4,000 items + evaluations, 16 account-regions | $13.00 |
+| Amazon GuardDuty | $3.91 per 1M CloudTrail events; $0.9775 per GB flow/DNS logs (first 500 GB) | ~3M events + minimal flow/DNS logs | $437.80 |
 | Amazon CloudWatch Logs | $0.50 per GB ingested (vended) + $0.03 per GB-month storage | VPC flow logs, firewall logs, SSM session logs (~5 GB) | $3.00 |
 | Amazon S3 (log archive) | $0.0225 per GB-month | CloudTrail/Config logs, ~2–5 GB/month (grows over time) | $2.00 |
 | SNS / EventBridge / Lambda | per-request pricing | Security alert plumbing, near-idle | $1.00 |
@@ -93,9 +93,9 @@ Use the template as a starting point and adjust service quantities to match your
 
 ## Annual Cost Summary
 Based on the minimum 8-account, setup-only configuration:
-- **Monthly Cost**: $1,968.51 (~$1,970)
-- **Annual Cost**: ~$23,622
-- **Cost per Account**: ~$246/month
+- **Monthly Cost**: $2,369.62 
+- **Annual Cost**: ~$28,435
+- **Cost per Account**: ~$296/month
 
 Cost distribution: the central network account represents ~95% of the total (~$1,865/month), and AWS Network Firewall alone is ~73%. The 3-AZ firewall footprint is a resilience and CGSO-alignment design decision fixed in the template. Note that the Network Firewall endpoint rate in Thailand ($0.66/hr) is higher than in us-east-1 ($0.395/hr).
 
@@ -137,5 +137,5 @@ Enable AWS Cost Explorer, AWS Budgets with alerts, and Cost Anomaly Detection in
 
 ## Conclusion
 
-The Thailand Secure Landing Zone provides comprehensive security and governance capabilities for AWS multi-account environments. The minimum viable setup with 8 core accounts and no workloads has an estimated monthly cost of **~$1,970 (~$23,600/year)**, dominated by the centralized network inspection infrastructure (Network Firewall, VPC endpoints, NAT gateways and Transit Gateway) in the network account. Security and governance services (Security Hub, GuardDuty, Config, KMS) add roughly $100/month at idle and scale with workload activity thereafter.
+The Thailand Secure Landing Zone provides comprehensive security and governance capabilities for AWS multi-account environments. The minimum viable setup with 8 core accounts and no workloads has an estimated monthly cost of **~$2,369 (approximately $28,435/year)**, dominated by the centralized network inspection infrastructure (Network Firewall, VPC endpoints, NAT gateways and Transit Gateway) in the network account. Security and governance services (Security Hub, GuardDuty, Config, KMS) add roughly $100/month at idle and scale with workload activity thereafter.
 
